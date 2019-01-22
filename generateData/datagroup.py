@@ -46,7 +46,6 @@ def main():
         
         #Combine the data from the sus and pro files
         row = linecache.getline('./pro'+str(num)+'.dat',1)
-        print(row.split())
         if not (float(row.split()[14]) == float(0.610)):
             #read and write the sus data
             for j in range(24):
