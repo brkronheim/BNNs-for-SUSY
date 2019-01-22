@@ -52,8 +52,7 @@ def main():
     for i in range(27):
         if not (i == 6 or i == 7 or i == 8):
             row = contents[i+69]
-            contents[i+69] = '          ' + row.split()[0] + '     ' + str(value[i]) + '   ' + row.split()[2] + ' ' 
-                             + row.split()[3] + '\n'
+            contents[i+69] = '          ' + row.split()[0] + '     ' + str(value[i]) + '   ' + row.split()[2] + ' ' + row.split()[3] + '\n'
 
     with open(str(sys.argv[1]), 'w') as file:
         file.writelines(contents)
