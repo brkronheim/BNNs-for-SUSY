@@ -1,3 +1,5 @@
+Writen by Karbo during the summer of 2017 and modified by Braden in the spring of 2019.
+
 This is the readme for makeData.sh, a script to generate pMSSM data using SUSYHIT and PROSPINO.
 The file is divided into two sections. The first section, SETUP, describes how to download and configure SUSYHIT and PROSPINO. The second section, RUN, describes the usage of makeData.sh.
 
