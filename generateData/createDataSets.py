@@ -5,7 +5,7 @@ Written by Braden Kronheim in the spring of 2019.
 Processes data output from makeData.sh to remove NaNs and create training files.
 Takes the following three inputs:
     * readName: the name of the file to be read with file ending
-    * write Name: the prefix of the written files, with no ending
+    * writeName: the prefix of the written files, with no ending
     * trainPercent: the percent (0-100) as an integer of the 
     *               input data to be used for training data,
     *               the rest will be used for validation
@@ -19,7 +19,7 @@ the input the networks take, and the ouput files are the output.
 
 The output files will have two columns, one with the leading order calculations
 and the other with the non leading order calculations. When training on this data
-use one, but not both, of these columns
+use one, but not both, of these columns.
 """
 import sys
 
