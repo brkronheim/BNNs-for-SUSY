@@ -17,8 +17,7 @@ In order to actually run these programs be sure to execute make into the command
 
 Next, make sure GNU parallel is installed. If it is not type the command:
 sudo apt-get install parallel
-The number of cores used in parallel can be adjusted by going to the makeData.sh file and adjusting the cores variable to the desired value.
-The default is 28.
+The number of cores used in parallel is a command line argument.
 
 Finally, ensure that makeData.sh, datagroup.py, pointchange.py, and heading.txt are in the same working directory. All of the code, text, as well as the susyhit and prospino folders, should now be in the user's working directory.
 
