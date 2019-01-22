@@ -36,12 +36,12 @@ The program should now be ready to execute. It should be executed from the direc
 
 A WARNING: This prgram creates AND THEN DELETES temporary directories at its location named "susy" and "pros". If the user has directories in the script's directory which have these names THEY WILL BE DELETED when the script finishes executing.
 
-Usage: makeData.sh [FLAGS] [NAME] [NUMBER]
+Usage: makeData.sh [FLAGS] [NAME] [NUMBER] [CORES]
 
      Name     The name of the datafile to be created
      Number   An integer value of points to be generated
+     Cores    An integer value of cores to be used
 
      Flags(optional):
        -h     Display help message
-       -b     Enable batch datagrouping 
        -a     Append data to an existing datafile
