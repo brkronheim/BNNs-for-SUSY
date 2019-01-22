@@ -1,0 +1,1 @@
+             M_1             M_2             M_3             A_t             A_b           A_tau        mu(EWSB)     tanbeta(in)         MA_pole            M_eL          M_tauL            M_eR          M_tauR           M_q1L           M_q3L            M_uR            M_tR            M_dR            M_bR     LO_ms[pb]    NLO_ms[pb]
