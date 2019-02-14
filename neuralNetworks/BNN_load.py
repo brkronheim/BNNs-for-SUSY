@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 
 from scipy import stats
-from BNN_Functions import normalizeData, build_input_pipeline, runInference
+from BNN_functions import normalizeData, build_input_pipeline, runInference
 
 @click.command()
 @click.option('--name', help='Name of network to load')
