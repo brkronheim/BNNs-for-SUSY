@@ -139,7 +139,7 @@ def main(hidden, width, epochs, tb, name):
                         averageLoss/valid_iters, averageError/valid_iters, valid_iters))
                
             #save the network
-            if(tb is not None):
+            if(name is not None):
                 saver = tf.train.Saver()
                 print('\nSaving...')
                 saver.save(sess, "./"+name)
