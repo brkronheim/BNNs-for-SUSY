@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 
 from math import ceil
-from BNN_Functions import (normalizeData, build_input_pipeline, createNeuralNet, 
+from BNN_functions import (normalizeData, build_input_pipeline, createNeuralNet, 
                            percentError, setupOptimization)
     
 @click.command()
