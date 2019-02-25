@@ -20,7 +20,9 @@ def main(name, out, iters):
     falls within 1, 2, and 3 standard deviations of the predicted distributions.
     Finally, in the file is given in --out  or test.txt the script will write 
     the unnormalized mean, lower 95% confidence value, higher 95% confidence 
-    value, the width of the 95% confidence interval, and the actual value.    
+    value, the width of the 95% confidence interval, and the actual value. It
+    will also print out the percent below the minimum value of the distribution
+    and the percent above the maximum value of the distribution.
     """
 
     trainIn=np.loadtxt("fullTrainInput.txt",delimiter="\t",skiprows=1)
@@ -55,45 +57,76 @@ def main(name, out, iters):
         data_size=train_size+val_size
         
         #setup data pipelines
-        (x_input, y_output, handle, training_iterator, validation_iterator, full_iterator) = build_input_pipeline(
-           data, batch_size, val_size, data_size, handle)
-        actual, pred = runInference(y_output, logits)
-        allPredictions=[]
-        full_handle = sess.run(full_iterator.string_handle())
-
-        #iterate over the input data several times
-        for i in range(iters):
-            real, prediction = sess.run([actual, pred], feed_dict={rate: dropoutPercent, handle: full_handle})
-            allPredictions.append(prediction)
-            
+        (x_input, y_output, handle, training_iterator, validation_iterator) = build_input_pipeline(
+           data, train_batch, randomize = False, handle=handle)
         
-        #data storage for predictions
-        allPredictions=np.array(allPredictions)
-        real=data[3]
+        #prediction operator
+        pred = runInference(logits)
+        
+        #iterator handles
+        train_handle = sess.run(training_iterator.string_handle())
+        validate_handle = sess.run(validation_iterator.string_handle())
+        
+        #iterate over the input data several times
+        allPredictions=np.zeros((iters,len(data[3])))
+        steps=iters*len(data[3])
+        decile=steps
+        if(steps/10>=1):
+            decile=int(steps/10)
+        total=0
+        while(total<steps):
+            prediction= sess.run([pred], feed_dict={rate: dropoutPercent, handle: validate_handle})
+            prediction=prediction[0]
+            
+            for j in range(len(prediction)):
+                if(total<iters*len(data[3])):
+                    allPredictions[int(total/len(data[3]))%iters,(total)%(len(data[3]))]=prediction[j]
+                total+=1    
+                if(total%decile==0):
+                    print("{:.2f} percent of data generated".format(100*total/steps))
+        
+        real=data[3]*normInfo[0][1]+normInfo[0][0]
         wrong=[]
         sd3=[]
         sd2=[]
         sd1=[]
-        #start writing to the outpuf file
+        belMin=[]
+        abvMax=[]
+        percentError=[]
         name=out+".txt"
+        allPredictions=allPredictions*normInfo[0][1]+normInfo[0][0]
         with open(name, 'w') as file:
+            decile=int(len(allPredictions[0,:])/10)
             for k in range(len(allPredictions[0,:])):
                 #fit output distribution
-                mean, sd = stats.norm.fit(allPredictions[:,k]*normInfo[0][1]+normInfo[0][0])
+                minimum=min(allPredictions[:,k])
+                maximum=max(allPredictions[:,k])
+                mean, sd = stats.norm.fit(allPredictions[:,k])
                 
                 #calculate the unnormalized values at each of the standard deviations
-                low99=np.exp(mean-sd*3)
-                low95=np.exp(mean-sd*2)
-                low68=np.exp(mean-sd)
-                high68=np.exp(mean+sd)
-                high95=np.exp(mean+sd*2)
-                high99=np.exp(mean+sd*3)
-                actual=np.exp(real[k]*normInfo[0][1]+normInfo[0][0])
+                low99=mean-sd*3
+                low95=mean-sd*2
+                low68=mean-sd
+                high68=mean+sd
+                high95=mean+sd*2
+                high99=mean+sd*3
+                actual=real[k]
                 
+                expLow=np.exp(low95)
+                expHigh=np.exp(high95)
+                expMean=np.exp(mean)
+                expActual=np.exp(actual) 
                 #write data to the output file
-                file.write(str(np.exp(mean)) + "\t" + str(low95) + "\t" + 
-                           str(high95) + "\t" + str(high95 - low95) + "\t" + 
-                           str(actual) + "\n")
+                file.write(str(expMean) + "\t" + str(expLow) + "\t" + 
+                           str(expHigh) + "\t" + str(expHigh - expLow) + "\t" + 
+                           str(expActual) + "\n")
+                
+                #Compare values to distribution max and min
+                if(actual<minimum):
+                    belMin.append(k)
+                elif(actual>maximum):
+                    abvMax.append(k)
+                
                 
                 #Find out where the actual data point falls in the output distribtuion
                 if(actual<low99 or actual>high99):
@@ -108,14 +141,22 @@ def main(name, out, iters):
                     sd2.append(k)
                 elif(actual<=high99):
                     sd3.append(k)
-            print("Number outside of 3 standard deviations:", len(wrong))
+                if((k+1)%decile==0):
+                    print("{:.2f} percent of data analyzed".format(100*(k+1)/len(allPredictions[0,:])))
+                    
+                        print("Number outside of 3 standard deviations:", len(wrong))
             print("Number between 2 and 3 standard deviations:", len(sd3))
             print("Number between 1 and 2 standard deviations:", len(sd2))
             print("Number inside 1 standard deviation:", len(sd1))
+            print("Number below distribution minimum:", len(belMin))
+            print("Number above distribution maximum:", len(abvMax))
+            print()
             print("Percent inside 1 standard deviation:", 100*len(sd1)/len(allPredictions[0,:]))
             print("Percent inside 2 standard deviations:",100*(len(sd1)+len(sd2))/len(allPredictions[0,:]))
             print("Percent inside 3 standard deviations:",100*(len(sd1)+len(sd2)+len(sd3))/len(allPredictions[0,:]))
             print("Percent outside 3 standard deviations:", 100*len(wrong)/len(allPredictions[0,:]))
+            print("Percent below distribution minimum:", 100*len(belMin)/len(allPredictions[0,:]))
+            print("Percent above distribution maximum:", 100*len(abvMax)/len(allPredictions[0,:]))
 
 if(__name__ == "__main__"):
     main()
