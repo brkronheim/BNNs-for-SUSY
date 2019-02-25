@@ -62,7 +62,7 @@ def normalizeData(trainIn, trainOut, valIn, valOut):
     
     return(normInfo,data)
     
-def build_input_pipeline(data, batch_size, validation_size, full_size, handle = None):
+def build_input_pipeline(data, train_batch, randomize=True, val_batch = None, handle = None):
     """Build an Iterator which can be switched between training and validation data.
     
     The Iterator here allows for data to be fed in very rapidly during the 
@@ -70,9 +70,10 @@ def build_input_pipeline(data, batch_size, validation_size, full_size, handle = 
     
     Input:
         * data: An array containing [trainIn,trainOutput,valIn,valOutput]
-        * batch_size: An integer corresponding to the output size of a single
-                      set of data from the training iterator
-        * validation_size: The number of data entries in the validation data
+        * train_batch: An integer corresponding to the batch size for the training iterator
+        * randomize: A boolean saying whether to shuffle the training data each iteration
+        * val_Batch: Batch size for validation
+        * handle: Option to pass in previously created handle
     
     Returns:
         * x_input: Symbolic representation of the input data the iterator produces
@@ -80,29 +81,28 @@ def build_input_pipeline(data, batch_size, validation_size, full_size, handle = 
         * handle: A handle for the iterator
         * training_iterator: A version of the iterator over the training data
         * validation_iterator: A versionof the iterator over the validation data
-        * handle: option to pass in previously created handle
+        
     """
 
     # Build an iterator over training batches.
-    # Data will be shuffled every time it is iterated through
-    # Suffling uses a buffer of size 50000
+    # Data will be shuffled every time it is iterated through if randomize = True
+    # Shuffling uses a buffer of size 50000
+    
     training_dataset = tf.data.Dataset.from_tensor_slices(
                     (data[0].astype(np.float32), data[1].astype(np.float32)))
-    training_batches = training_dataset.shuffle(
-                    50000, reshuffle_each_iteration=True).repeat().batch(batch_size)
-    training_iterator = training_batches.make_one_shot_iterator()
+    if(randomize):
+        training_dataset = training_dataset.shuffle(50000, reshuffle_each_iteration=True)
+    training_dataset = training_dataset.repeat().batch(train_batch)
     
-    # Build a iterator over the validation set with batch_size=validation_size,
-    # This means a single batch will be the whole dataset
+    training_iterator = training_dataset.make_one_shot_iterator()
+    
+    # Build a iterator over the validation set with batch_size=val_Batch,
+    if(val_batch is None):
+        val_batch=len(data[3])
+    
     validation_dataset = tf.data.Dataset.from_tensor_slices((data[2].astype(np.float32), data[3].astype(np.float32)))
-    validation_frozen = (validation_dataset.take(validation_size).
-                    repeat().batch(validation_size))
+    validation_frozen = validation_dataset.repeat().batch(val_batch)
     validation_iterator = validation_frozen.make_one_shot_iterator()
-    
-    full_dataset = tf.data.Dataset.from_tensor_slices((data[2].astype(np.float32), data[3].astype(np.float32)))
-    #full_dataset.concatenate(tf.data.Dataset.from_tensor_slices(data[0].astype(np.float32)))
-    full_frozen = (full_dataset.take(validation_size).repeat().batch(validation_size))
-    full_iterator = full_frozen.make_one_shot_iterator()
     
     # Combine these into a feedable iterator that can switch between training
     # and validation inputs.
@@ -110,11 +110,11 @@ def build_input_pipeline(data, batch_size, validation_size, full_size, handle = 
         handle = tf.placeholder(tf.string, shape=[], name = "handle")
 
     feedable_iterator = tf.data.Iterator.from_string_handle(
-        handle, training_batches.output_types, training_batches.output_shapes)
+        handle, training_dataset.output_types, training_dataset.output_shapes)
     
     x_input, y_output = feedable_iterator.get_next() #Represent the output from the iterator
-    
-    return x_input, y_output, handle, training_iterator, validation_iterator, full_iterator
+
+    return x_input, y_output, handle, training_iterator, validation_iterator
 
 def createNeuralNet(layer_width, hidden_layers, x_input, rate):
     """ Creates a nerual net of dense flipout layers.
@@ -141,11 +141,20 @@ def createNeuralNet(layer_width, hidden_layers, x_input, rate):
     with tf.name_scope("bayesian_neural_net", values=[x_input, rate]):
         neural_net = tf.keras.Sequential()
         for n in range(hidden_layers):
-            neural_net.add(tfp.layers.DenseFlipout(layer_width, activation=None))
-            neural_net.add(tf.keras.layers.PReLU())
+            """
+            neural_net.add(tfp.layers.DenseLocalReparameterization(layer_width, activation=tf.nn.relu,
+                               bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(),
+                               bias_prior_fn=tfp.layers.default_multivariate_normal_fn))
+            """
+            neural_net.add(tf.keras.layers.Dense(layer_width, activation=None))
             
-        neural_net.add(tfp.layers.DenseFlipout(1, activation=None))
-
+            neural_net.add(tf.keras.layers.PReLU())
+        neural_net.add(tf.keras.layers.Dense(layer_width, activation=None))
+        """    
+        neural_net.add(tfp.layers.DenseLocalReparameterization(1, activation=None,
+                               bias_posterior_fn=tfp.layers.default_mean_field_normal_fn(),
+                               bias_prior_fn=tfp.layers.default_multivariate_normal_fn))
+        """
         logits = tf.identity(neural_net(x_input), name="logits")
         
         return(neural_net,logits)
@@ -180,7 +189,7 @@ def percentError(mean, sd, y_output, logits):
         
         return(percentErr)
     
-def setupOptimization(learning_rate, y_output, logits):
+def setupOptimization(mean, sd, learning_rate, y_output, logits):
     """Sets up the optimizer and the loss function 
     
     The loss function used is the mean_squared_error and the optimizer
@@ -199,7 +208,11 @@ def setupOptimization(learning_rate, y_output, logits):
     """
     
     with tf.name_scope("train", values=[y_output, logits]):
-        loss=tf.losses.mean_squared_error(labels=y_output, predictions=tf.reduce_sum(logits,axis=-1))
+        labels=y_output#*sd+mean
+        #labels=tf.exp(labels)
+        predictions=tf.reduce_sum(logits,axis=-1)#*sd+mean
+        #predictions=tf.exp(predictions)
+        loss=tf.losses.mean_squared_error(labels=labels, predictions=predictions)
         optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
         train_op = optimizer.minimize(loss)
         
@@ -207,15 +220,13 @@ def setupOptimization(learning_rate, y_output, logits):
         
         return(loss, train_op)
     
-def runInference(y_output, logits):
-    """Operation which Returns the real and predicted values for a given input.
+def runInference(logits):
+    """Operation which returns the predicted value of a given input.
        
        Input:
-           * y_output: actual value
            * logits: predicted value
        OutputL
-           * y_output: usable acutal value
            * logits: usable predicted value
     """
-    with tf.name_scope("runInference", values=[y_output, logits]):
-        return(y_output, tf.reduce_sum(logits, axis=-1))
+    with tf.name_scope("runInference", values=[logits]):
+        return(tf.reduce_sum(logits, axis=-1))
