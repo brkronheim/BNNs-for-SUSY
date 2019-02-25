@@ -7,7 +7,7 @@ import tensorflow as tf
 from math import ceil
 from BNN_functions import (normalizeData, build_input_pipeline, createNeuralNet, 
                            percentError, setupOptimization)
-    
+
 @click.command()
 @click.option('--hidden', default=3, help='Number of hidden layers')
 @click.option('--width', default=50, help='Width of the hidden layers')
@@ -64,8 +64,8 @@ def main(hidden, width, epochs, tb, name):
         data_size=train_size+val_size
         
         #setup data pipelines
-        (x_input, y_output, handle, training_iterator, validation_iterator, full_iterator) = build_input_pipeline(
-           data, batch_size, val_size, data_size)
+        (x_input, y_output, handle, training_iterator, validation_iterator) = build_input_pipeline(
+           data, batch_size)
 
         #Create the neural network
         neural_net, logits = createNeuralNet(width, hidden, x_input, rate)
@@ -77,7 +77,7 @@ def main(hidden, width, epochs, tb, name):
         percentErr = percentError(normInfo[0][0], normInfo[0][1], y_output, logits)
 
         #Create the loss function and optimizer
-        loss, train_op = setupOptimization(learning_rate, y_output, logits)
+        loss, train_op = setupOptimization(normInfo[0][0], normInfo[0][1], learning_rate, y_output, logits)
 
 
         init_op= tf.group(tf.global_variables_initializer(),
