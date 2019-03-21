@@ -20,10 +20,9 @@ class DenseLayer(object):
         
         self.allWeights=[None]*outputDims #List to store all weight distributions
         
-        self.weightsMean=tf.Variable(0, dtype=self.dtype)
             
         #Weight mean value and mean distribution
-
+        self.weightsMean=tf.Variable(0, dtype=self.dtype)
         self.weightsMeanHyperMean=tfd.MultivariateNormalDiag(loc=[self.weightsMean],
                     scale_diag=[1.0])
         self.weightsMeanHyperSD=tfd.MultivariateNormalDiag(loc=[1.0],
@@ -62,6 +61,7 @@ class DenseLayer(object):
         self.weights_chain_start = tf.placeholder(dtype, shape=(self.outputDims, self.inputDims))
         self.bias_chain_start = tf.placeholder(dtype, shape=(self.outputDims, 1))
         
+        
         self.weight_mean_chain_start = tf.placeholder(dtype, shape=())
         self.weight_SD_chain_start = tf.placeholder(dtype, shape=())
         
@@ -70,7 +70,12 @@ class DenseLayer(object):
         
     
     def createPerceptron(self):
-        """Creates the weight and biases distributions for a single perceptron"""
+        """Creates the weight and biases distributions for a single perceptron
+        
+        Returns:
+            * weights: distribution for the perceptron's weights
+            * bias: distribution for the perceptron's biases
+        """
         weights = tfd.MultivariateNormalDiag(
                 loc=np.ones(self.inputDims, dtype=self.dtype)*self.weightsMean,
                 scale_diag=np.ones(self.inputDims, dtype=self.dtype)*self.weightsSD)
@@ -84,6 +89,13 @@ class DenseLayer(object):
     def calculateProbs(self, weights, biases):
         """Calculates the log probability of a set of weights and biases given
         their distributions in this layer.
+        
+        Arguments:
+            * weights: new possible weight tensor
+            * biases: new possible bias tensor
+            
+        Returns:
+            * prob: log prob of weights and biases given their distributions
         """
         prob=0
         for m in range(self.outputDims):     
@@ -98,6 +110,18 @@ class DenseLayer(object):
         """Calculates the log probability of a set of weights and biases given
         new distribtuions as well as the probability of the new distribution
         means and SDs given their distribtuions.
+        
+        Arguments:
+            * weights: current weight tensor
+            * weightsMean: new possible weight mean
+            * weightsSD: new possible weigh SD
+            * biases: current bias tensor
+            * biasesMean: new possible bias mean
+            * biasesSD: new possible bias SD
+            
+        Returns:
+            * prob: log probability of weights and biases given the new distributions 
+            and the probability of the new distributions given their priors
         """
         prob=0
 
@@ -118,16 +142,36 @@ class DenseLayer(object):
         biasDist = tfd.MultivariateNormalDiag(
                 loc=[biasesMean],
                 scale_diag=[biasesSD])
+        
         val=weightsDist.log_prob([weights])
         prob+=tf.reduce_sum(val)    
         val=biasDist.log_prob([biases])
         prob+=tf.reduce_sum(val)
 
-        return(prob)    
+        return(prob)
         
+    def sampleWeightsBiases(self):
+        """Creates randomized weight and bias tensors based off of their distributions
+        
+        Returns:
+            * tempWeights: randomized weight tensor
+            * tempBiases: randomized bias tensor
+        """
+        
+        tempWeights = tf.Variable([self.allWeights[n].sample() for n in range(self.outputDims)])
+        tempBiases = tf.Variable([self.allBiases[n].sample() for n in range(self.outputDims)])
+        
+        return(tempWeights, tempBiases)
+
     def update(self, weightsMean, weightsSD, biasesMean, biasesSD):
         """Updates the weight and bias distributions for the layer when their
         means and SDs change.
+        
+        Arguments:
+            * weightsMean: mean of weight distribution
+            * weightsSD: standard deviation of weight distribution
+            * biasesMean: mean of bias distribution
+            * biasesSD: standard deviation of bias distribution
         """
         self.weightsMean=tf.Variable(weightsMean, dtype=self.dtype)
         self.weightsSD=tf.Variable(weightsSD, dtype=self.dtype)
