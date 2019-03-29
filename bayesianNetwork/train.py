@@ -8,6 +8,7 @@ from scipy import stats
 from BNN_functions import normalizeData
 
 from layer import DenseLayer
+from activationFunctions import Relu
 import network
 
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
@@ -32,6 +33,7 @@ neuralNet=network.network(dtype,data[0],data[1], data[2], data[3])
 neuralNet.add(DenseLayer(inputDims,hiddenDims))
 for n in range(hiddenLayers-1):
     neuralNet.add(DenseLayer(hiddenDims, hiddenDims))
+    neuralNet.add(Relu())
 neuralNet.add(DenseLayer(hiddenDims, outputDims))
 neuralNet.setupMCMC(0.000001, 0.01, 20, 20)
 savedResults=neuralNet.train(10000,50,10,500,100, normInfo[0][0], normInfo[0][1])
