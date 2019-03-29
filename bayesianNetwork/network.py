@@ -23,10 +23,10 @@ class network(object):
         """
         self.dtype = dtype
 
-        self.trainX = tf.reshape(tf.constant(trainX, dtype=self.dtype),[len(trainX),len(trainX[0])])
+        self.trainX = tf.reshape(tf.constant(trainX, dtype=self.dtype),[len(trainX),19])
         self.trainY = tf.constant(trainY, dtype=self.dtype)        
 
-        self.validateX = tf.reshape(tf.constant(validateX, dtype=self.dtype),[len(validateX),len(validateX[0])])
+        self.validateX = tf.reshape(tf.constant(validateX, dtype=self.dtype),[len(validateX),19])
         self.validateY = tf.constant(validateY, dtype=self.dtype)        
 
         self.vars_=[] #List with the current weight and bias values
@@ -57,7 +57,7 @@ class network(object):
             scale=np.array(.1, current.dtype.as_numpy_dtype))
         return(result) 
         
-    def metrics(self, scaleExp, train, mean=1, sd=1, *argv):
+    def metrics(self, logits, scaleExp, train, mean=1, sd=1):
         """Calculates the average squared error and percent difference of the 
         current network
         Arguments:
@@ -74,26 +74,19 @@ class network(object):
         
         """
         #Determine whether weight and bias tensors were given
-        tensors=argv
-        if(len(tensors)==0):
-            tensors=self.vars_
-        else:
-            tensors=tensors[0]
         
-        
-        current=self.predict(train,tensors)
         y=self.validateY
         if(train):
             y=self.trainY
         
-        squaredError=tf.reduce_mean(tf.squared_difference(current, y))
-        current=tf.add(tf.multiply(current, sd), mean)
+        squaredError=tf.reduce_mean(tf.squared_difference(logits, y))
+        scaled=tf.add(tf.multiply(logits, sd), mean)
         real=tf.add(tf.multiply(y, sd), mean)
         if(scaleExp):
-            current=tf.exp(current)
+            scaled=tf.exp(scaled)
             real=tf.exp(real)
-        percentError=tf.reduce_mean(tf.multiply(tf.abs(tf.divide(tf.subtract(current, real), real)), 100))
-        return(squaredError, percentError)
+        percentError=tf.reduce_mean(tf.multiply(tf.abs(tf.divide(tf.subtract(scaled, real), real)), 100))
+        return(logits, squaredError, percentError)
         
         
     def calculateProbs(self, *argv):
@@ -107,10 +100,16 @@ class network(object):
 
         prob=tf.reduce_sum(self.make_response_likelihood(argv).log_prob(self.trainY))
         
+        index=0
         for n in range(len(self.layers)):
-            prob+=self.layers[n].calculateProbs(argv[2*n], argv[2*n+1])
+            numTensors=self.layers[n].numTensors
+            if(numTensors>0):    
+                prob+=self.layers[n].calculateProbs(self.vars_[index:index+numTensors])
+                index+=numTensors
         return(prob)
-
+        
+        
+    
     def calculateHyperProbs(self, *argv):
         """Calculates the log probability of the current hyper parameters
         
@@ -118,11 +117,19 @@ class network(object):
             * argv: an undetermined number of tensors containg the hyper parameters
         """
         
+        
+        
         prob=0
+        indexh=0
+        index=0
         for n in range(len(self.layers)):
-            prob+=self.layers[n].calculateHyperProbs(self.vars_[2*n],
-                             argv[4*n], argv[4*n+1],self.vars_[2*n+1],
-                             argv[4*n+2],argv[4*n+3])
+            numHyperTensors=self.layers[n].numHyperTensors
+            numTensors=self.layers[n].numTensors
+            if(numHyperTensors>0):    
+                prob+=self.layers[n].calculateHyperProbs(argv[indexh:indexh+numHyperTensors],
+                                 self.vars_[index:index+numTensors])
+                indexh+=numHyperTensors
+                index+=numTensors
         return(prob)
 
     
@@ -142,55 +149,69 @@ class network(object):
         x=self.trainX
         if(not train):
             x=self.validateX
-        expandedStates=[None]*len(tensors)
-        for n in range(len(tensors)):
-            current=tensors[n]
-            currentShape=tf.pad(
-                tf.shape(current),
-                paddings=[[tf.where(tf.rank(current) > 1, 0, 1), 0]],
-                constant_values=1)
-            expandedStates[n]=tf.reshape(current, currentShape)
-        
-        
+
         current=tf.transpose(x)
-        n=0
-        while(n+1<len(expandedStates)-2):
-            current=gen_nn_ops.relu(tf.add(tf.matmul(expandedStates[n], current), expandedStates[n+1]))
-            n+=2
-        current=tf.add(tf.matmul(expandedStates[-2], current), expandedStates[-1])
+        index=0
+        for n in range(len(self.layers)):
+            numTensors=self.layers[n].numTensors
+            current=self.layers[n].predict(current,tensors[index:index+numTensors])
+            index+=numTensors
+        return(current)
+    
+    def genLogits(self, train):
+        """Makes a prediction
+        
+        Arguments:
+            * train: a boolean value which determines whether to use training data
+            * argv: an undetermined number of tensors containg the weights
+            and biases.
+        """
+        tensors=self.states
+        x=self.trainX
+        if(not train):
+            x=self.validateX
+
+        current=tf.transpose(x)
+        index=0
+        for n in range(len(self.layers)):
+            numTensors=self.layers[n].numTensors
+            current=self.layers[n].predict(current,tensors[index:index+numTensors])
+            index+=numTensors
         return(current)
     
     def update(self):
         """Updates the hyper parameters in each of the layers"""
+        indexh=0
         for n in range(len(self.layers)):
-            self.layers[n].update(self.hyperVars[4*n],self.hyperVars[4*n+1],
-                       self.hyperVars[4*n+2],self.hyperVars[4*n+3])
+            numHyperTensors=self.layers[n].numHyperTensors
+            if(numHyperTensors>0):    
+                self.layers[n].update(self.hyperVars[indexh:indexh+numHyperTensors])
+                indexh+=numHyperTensors
+
         
-    def add(self, layer):
-        """Adds a new layer to the network
+    def add(self, layer, weights=None, biases=None):
+        """Adds a new layer to the netwtfork
         Arguments:
             * layer: the layer to be added
         """
         self.layers.append(layer)
-        
-        self.states.append(layer.weights_chain_start)
-        self.states.append(layer.bias_chain_start)
-        weights, biases = layer.sampleWeightsBiases()
-        
-        self.vars_.append(weights)
-        self.vars_.append(biases)
-        
-        self.hyperStates.append(layer.weight_mean_chain_start)
-        self.hyperStates.append(layer.weight_SD_chain_start)
-        
-        self.hyperStates.append(layer.bias_mean_chain_start)
-        self.hyperStates.append(layer.bias_SD_chain_start)
-        
-        self.hyperVars.append(layer.weightsMean)
-        self.hyperVars.append(layer.weightsSD)
-        self.hyperVars.append(layer.biasesMean)
-        self.hyperVars.append(layer.biasesSD)
-        
+        if(layer.numTensors>0):
+            for states in layer.chains:
+                self.states.append(states)
+            if weights is None:
+                startVals = layer.sample()
+                for vals in startVals:
+                    self.vars_.append(vals)
+            else:
+                self.vars_.append(tf.Variable(weights))
+                self.vars_.append(tf.Variable(biases))
+
+        if(layer.numHyperTensors>0):        
+            for states in layer.hyper_chains:
+                self.hyperStates.append(states)
+            for vals in layer.firstHypers:
+                self.hyperVars.append(vals)
+            
     def setupMCMC(self, stepSize, hyperStepSize, leapfrog, hyperLeapfrog):
         """Sets up the MCMC algorithms
         Arguments:
@@ -208,11 +229,11 @@ class network(object):
             num_results=num_results,
             num_burnin_steps=0, #start collecting data on first step
             current_state=self.states, #starting parts of chain 
+            parallel_iterations=20, 
             kernel=tfp.mcmc.HamiltonianMonteCarlo( #use HamiltonianMonteCarlo to step in the chain
                 target_log_prob_fn=self.calculateProbs, #used to calculate log density
                 num_leapfrog_steps=leapfrog,
                 step_size=self.step_size,
-                
                 step_size_update_fn=tfp.mcmc.make_simple_step_size_update_policy(decrement_multiplier=0.01), 
                 state_gradients_are_stopped=True))
         self.avg_acceptance_ratio = tf.reduce_mean(
@@ -224,6 +245,7 @@ class network(object):
             num_results=num_results,
             num_burnin_steps=0, #start collecting data on first step
             current_state=self.hyperStates, #starting parts of chain 
+            parallel_iterations=20,
             kernel=tfp.mcmc.HamiltonianMonteCarlo( #use HamiltonianMonteCarlo to step in the chain
                 target_log_prob_fn=self.calculateHyperProbs, #used to calculate log density
                 num_leapfrog_steps=hyperLeapfrog,
@@ -235,7 +257,7 @@ class network(object):
             tf.exp(tf.minimum(hyper_kernel_results.log_accept_ratio, 0.)))
         self.hyper_loss = -tf.reduce_mean(hyper_kernel_results.accepted_results.target_log_prob)
         
-    def train(self, epochs, updatePriorsWait, updatePriorsEpochs, startSampling, samplingStep, mean, sd):
+    def train(self, epochs, startPriorUpdate, updatePriorsWait, updatePriorsEpochs, startSampling, samplingStep, mean, sd):
         """Trains the network
         Arguements:
             * Epochs: Number of training cycles
@@ -249,8 +271,11 @@ class network(object):
         Returns:
             * results: the output of the network when sampled
         """
-       
+        run_options = tf.RunOptions(report_tensor_allocations_upon_oom = True)
+        
         self.results=[]
+        logits=self.genLogits(False)
+        result, squaredError, percentError=self.metrics(logits, True, False, mean, sd)
         with tf.Session() as sess:
         
             init_op = tf.global_variables_initializer()
@@ -261,24 +286,48 @@ class network(object):
             while(iter_<epochs): #Main training loop
                 for n in range(len(self.vars_)):
                     if(tf.contrib.framework.is_tensor(self.vars_[n])):
-                        self.vars_[n]=sess.run(self.vars_[n])
+                        self.vars_[n]=sess.run(self.vars_[n], options=run_options)
+                print("a")
+                for n in range(len(self.hyperVars)):
+                            if(tf.contrib.framework.is_tensor(self.hyperVars[n])):
+                                self.hyperVars[n]=sess.run(self.hyperVars[n])
+                print("b")
                 [
                     nextStates,
                     loss_,
                     step_size_,
                     avg_acceptance_ratio_,
+                    result_, 
+                    squaredError_, 
+                    percentError_,
+                    nextHyperStates,
+                    hyperLoss_,
+                    hyper_step_size_,
+                    hyper_avg_acceptance_ratio_,
                 ] = sess.run([
                     self.states_MCMC,
                     self.loss,
                     self.step_size,
                     self.avg_acceptance_ratio,
-                ], feed_dict={tuple(self.states): tuple(self.vars_)})
+                    result, 
+                    squaredError, 
+                    percentError,
+                    self.hyper_states_MCMC,
+                    self.hyper_loss,
+                    self.hyper_step_size,
+                    self.hyper_avg_acceptance_ratio,
+                ], feed_dict={tuple(self.states+self.hyperStates): tuple(self.vars_+self.hyperVars)})
                 for n in range(len(self.vars_)):
                     self.vars_[n]=nextStates[n][-1]
                 iter_+=1
                 print('iter:{:>2}  Network loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
                           iter_, loss_, step_size_, avg_acceptance_ratio_))
-                if(iter_%updatePriorsWait==0): #Hyper update loop
+                print('Hyper loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
+                                hyperLoss_, hyper_step_size_, hyper_avg_acceptance_ratio_))
+                if(iter_%updatePriorsWait==0 and iter_>=startPriorUpdate):
+                    self.update()
+                """
+                if(iter_%updatePriorsWait==0 and iter_>=startPriorUpdate): #Hyper update loop
                     hyperIter=0
                     while(hyperIter<updatePriorsEpochs):
                         for n in range(len(self.hyperVars)):
@@ -302,10 +351,12 @@ class network(object):
                                 hyperIter, hyperLoss_, hyper_step_size_, hyper_avg_acceptance_ratio_))
                         if(hyperIter==updatePriorsWait):
                             self.update()
-                
-                if(iter_>=startSampling and iter_%samplingStep==0): #Create predictions
-                    squaredError, percentError=sess.run(self.metrics(True, False, mean, sd))
-                    print('squaredError{: 9.5f} percentDifference{: 7.3f}'.format(squaredError, percentError))
-                    out=self.predict(False)
-                    self.results.append(sess.run(out))
+                """
+                #if(iter_>=startSampling and iter_%samplingStep==0): #Create predictions
+                print("Starting Metrics")
+                #result, squaredError, percentError=sess.run([result_, squaredError_, percentError_], 
+                #                                            feed_dict={tuple(self.states): tuple(self.vars_)})
+                print('squaredError{: 9.5f} percentDifference{: 7.3f}'.format(squaredError_, percentError_))
+                self.results.append(result_)
+                print("metrics done")
         return(self.results)
