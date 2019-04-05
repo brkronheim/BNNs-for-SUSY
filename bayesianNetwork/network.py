@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -190,7 +191,7 @@ class network(object):
 
         
     def add(self, layer, weights=None, biases=None):
-        """Adds a new layer to the netwtfork
+        """Adds a new layer to the network
         Arguments:
             * layer: the layer to be added
         """
@@ -235,11 +236,11 @@ class network(object):
                 num_leapfrog_steps=leapfrog,
                 step_size=self.step_size,
                 step_size_update_fn=tfp.mcmc.make_simple_step_size_update_policy(decrement_multiplier=0.01), 
-                state_gradients_are_stopped=True))
+                state_gradients_are_stopped=True,
+                seed=100))
         self.avg_acceptance_ratio = tf.reduce_mean(
             tf.exp(tf.minimum(kernel_results.log_accept_ratio, 0.)))
         self.loss = -tf.reduce_mean(kernel_results.accepted_results.target_log_prob)
-        
         
         self.hyper_states_MCMC, hyper_kernel_results = tfp.mcmc.sample_chain(
             num_results=num_results,
@@ -250,14 +251,14 @@ class network(object):
                 target_log_prob_fn=self.calculateHyperProbs, #used to calculate log density
                 num_leapfrog_steps=hyperLeapfrog,
                 step_size=self.hyper_step_size,
-                
                 step_size_update_fn=tfp.mcmc.make_simple_step_size_update_policy(decrement_multiplier=0.01), 
-                state_gradients_are_stopped=True))
+                state_gradients_are_stopped=True,
+                seed=50))
         self.hyper_avg_acceptance_ratio = tf.reduce_mean(
             tf.exp(tf.minimum(hyper_kernel_results.log_accept_ratio, 0.)))
         self.hyper_loss = -tf.reduce_mean(hyper_kernel_results.accepted_results.target_log_prob)
         
-    def train(self, epochs, startPriorUpdate, updatePriorsWait, updatePriorsEpochs, startSampling, samplingStep, mean, sd):
+    def train(self, epochs, startPriorUpdate, updatePriorsWait, updatePriorsEpochs, startSampling, samplingStep, mean, sd,folderName=None):
         """Trains the network
         Arguements:
             * Epochs: Number of training cycles
@@ -271,7 +272,18 @@ class network(object):
         Returns:
             * results: the output of the network when sampled
         """
-        run_options = tf.RunOptions(report_tensor_allocations_upon_oom = True)
+        filePath=None
+        files=[]
+        if(folderName is not None):
+            filePath=os.path.join(os.getcwd(), folderName)
+            if(not os.path.isdir(filePath)):
+                os.mkdir(filePath)
+            for n in range(len(self.vars_)):
+                files.append(open(filePath+"/"+str(n)+".txt", "wb"))
+            files.append(open(filePath+"/summary.txt", "wb"))
+                
+            
+            
         
         self.results=[]
         logits=self.genLogits(False)
@@ -286,12 +298,10 @@ class network(object):
             while(iter_<epochs): #Main training loop
                 for n in range(len(self.vars_)):
                     if(tf.contrib.framework.is_tensor(self.vars_[n])):
-                        self.vars_[n]=sess.run(self.vars_[n], options=run_options)
-                print("a")
+                        self.vars_[n]=sess.run(self.vars_[n])
                 for n in range(len(self.hyperVars)):
                             if(tf.contrib.framework.is_tensor(self.hyperVars[n])):
                                 self.hyperVars[n]=sess.run(self.hyperVars[n])
-                print("b")
                 [
                     nextStates,
                     loss_,
@@ -324,39 +334,19 @@ class network(object):
                           iter_, loss_, step_size_, avg_acceptance_ratio_))
                 print('Hyper loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
                                 hyperLoss_, hyper_step_size_, hyper_avg_acceptance_ratio_))
-                if(iter_%updatePriorsWait==0 and iter_>=startPriorUpdate):
-                    self.update()
-                """
-                if(iter_%updatePriorsWait==0 and iter_>=startPriorUpdate): #Hyper update loop
-                    hyperIter=0
-                    while(hyperIter<updatePriorsEpochs):
-                        for n in range(len(self.hyperVars)):
-                            if(tf.contrib.framework.is_tensor(self.hyperVars[n])):
-                                self.hyperVars[n]=sess.run(self.hyperVars[n])
-                        [
-                            nextHyperStates,
-                            hyperLoss_,
-                            hyper_step_size_,
-                            hyper_avg_acceptance_ratio_,
-                        ] = sess.run([
-                            self.hyper_states_MCMC,
-                            self.hyper_loss,
-                            self.hyper_step_size,
-                            self.hyper_avg_acceptance_ratio,
-                        ], feed_dict={tuple(self.hyperStates): tuple(self.hyperVars)})
-                        for n in range(len(self.hyperVars)):
-                            self.hyperVars[n]=nextHyperStates[n][-1]
-                        hyperIter+=1
-                        print('iter:{:>2}  Hyper loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
-                                hyperIter, hyperLoss_, hyper_step_size_, hyper_avg_acceptance_ratio_))
-                        if(hyperIter==updatePriorsWait):
-                            self.update()
-                """
-                #if(iter_>=startSampling and iter_%samplingStep==0): #Create predictions
-                print("Starting Metrics")
-                #result, squaredError, percentError=sess.run([result_, squaredError_, percentError_], 
-                #                                            feed_dict={tuple(self.states): tuple(self.vars_)})
                 print('squaredError{: 9.5f} percentDifference{: 7.3f}'.format(squaredError_, percentError_))
                 self.results.append(result_)
-                print("metrics done")
+                if(filePath is not None):
+                    for n in range(len(files)-1):    
+                        np.savetxt(files[n],self.vars_[n])
+        file=files[-1]
+        for n in range(len(self.vars_)):
+            val=""
+            for sizes in self.vars_[n].shape:
+                val+=str(sizes)+" "
+            val=val.strip()+"\n"
+            file.write(val.encode("utf-8"))
+        file.write((str(epochs)+" "+str(len(self.vars_))).encode("utf-8"))
+        for file in files:
+            file.close()
         return(self.results)
