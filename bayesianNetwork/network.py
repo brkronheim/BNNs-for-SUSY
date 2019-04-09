@@ -1,9 +1,8 @@
 import os
+
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
-
-from tensorflow.python.ops import gen_nn_ops
 
 tfd = tfp.distributions
 
@@ -38,9 +37,7 @@ class network(object):
 
         self.layers=[] #List of all the layers
 
-                
-        
-    
+
     def make_response_likelihood(self, *argv):
         """Make a prediction and assign it a distribution
         
@@ -62,20 +59,19 @@ class network(object):
         """Calculates the average squared error and percent difference of the 
         current network
         Arguments:
+            * logits: output from the network
             * scaleExp: boolean value to determine whether to take the exponential
-            of the data
+            of the data and scale it
             * train: boolean value to determine whether to use the training data 
             * mean: mean value used for unshifiting a distribution
             * sd: sd value used for unscalling a distribution
-            * argv: an undetermined number of tensors containg the weights
-            and biases. If none are given the stored values are used
         Returns:
             * squaredError: the mean squared error of predictions from the network
             * percentError: the percent error of the predictions from the network
         
         """
-        #Determine whether weight and bias tensors were given
         
+        #Get the correct output values
         y=self.validateY
         if(train):
             y=self.trainY
@@ -86,21 +82,27 @@ class network(object):
         if(scaleExp):
             scaled=tf.exp(scaled)
             real=tf.exp(real)
+        else:
+            scaled=logits
         percentError=tf.reduce_mean(tf.multiply(tf.abs(tf.divide(tf.subtract(scaled, real), real)), 100))
         return(logits, squaredError, percentError)
         
         
     def calculateProbs(self, *argv):
-        """Calculates the log probability of the current weight and bias values
+        """Calculates the log probability of the current network values
         as well as the log probability of their prediction.
         
         Arguments:
             * argv: an undetermined number of tensors containg the weights
             and biases.
+        Returns:
+            * prob: log probability of network values and network prediction
         """
 
+        #probability of the output
         prob=tf.reduce_sum(self.make_response_likelihood(argv).log_prob(self.trainY))
         
+        #probability of the network parameters
         index=0
         for n in range(len(self.layers)):
             numTensors=self.layers[n].numTensors
@@ -110,16 +112,14 @@ class network(object):
         return(prob)
         
         
-    
     def calculateHyperProbs(self, *argv):
         """Calculates the log probability of the current hyper parameters
         
         Arguments:
             * argv: an undetermined number of tensors containg the hyper parameters
+        Returns:
+            * prob: log probability of hyper parameters given their priors
         """
-        
-        
-        
         prob=0
         indexh=0
         index=0
@@ -141,6 +141,10 @@ class network(object):
             * train: a boolean value which determines whether to use training data
             * argv: an undetermined number of tensors containg the weights
             and biases.
+            
+        Returns:
+            * prediction: a prediction from the network 
+            
         """
         tensors=argv
         if(len(tensors)==0):
@@ -151,49 +155,21 @@ class network(object):
         if(not train):
             x=self.validateX
 
-        current=tf.transpose(x)
+        prediction=tf.transpose(x)
         index=0
         for n in range(len(self.layers)):
             numTensors=self.layers[n].numTensors
-            current=self.layers[n].predict(current,tensors[index:index+numTensors])
+            prediction=self.layers[n].predict(prediction,tensors[index:index+numTensors])
             index+=numTensors
-        return(current)
+        return(prediction)
     
-    def genLogits(self, train):
-        """Makes a prediction
-        
-        Arguments:
-            * train: a boolean value which determines whether to use training data
-            * argv: an undetermined number of tensors containg the weights
-            and biases.
-        """
-        tensors=self.states
-        x=self.trainX
-        if(not train):
-            x=self.validateX
 
-        current=tf.transpose(x)
-        index=0
-        for n in range(len(self.layers)):
-            numTensors=self.layers[n].numTensors
-            current=self.layers[n].predict(current,tensors[index:index+numTensors])
-            index+=numTensors
-        return(current)
-    
-    def update(self):
-        """Updates the hyper parameters in each of the layers"""
-        indexh=0
-        for n in range(len(self.layers)):
-            numHyperTensors=self.layers[n].numHyperTensors
-            if(numHyperTensors>0):    
-                self.layers[n].update(self.hyperVars[indexh:indexh+numHyperTensors])
-                indexh+=numHyperTensors
-
-        
     def add(self, layer, weights=None, biases=None):
         """Adds a new layer to the network
         Arguments:
             * layer: the layer to be added
+            * weigths: matrix to initialize weights
+            * biases: matrix to initialize biases
         """
         self.layers.append(layer)
         if(layer.numTensors>0):
@@ -213,6 +189,7 @@ class network(object):
             for vals in layer.firstHypers:
                 self.hyperVars.append(vals)
             
+            
     def setupMCMC(self, stepSize, hyperStepSize, leapfrog, hyperLeapfrog):
         """Sets up the MCMC algorithms
         Arguments:
@@ -226,6 +203,7 @@ class network(object):
         self.hyper_step_size = tf.Variable(np.array(hyperStepSize, self.dtype))
         num_results = 2 #number of markov chain draws
         
+        #Setup the Markov Chain for the network parameters
         self.states_MCMC, kernel_results = tfp.mcmc.sample_chain(
             num_results=num_results,
             num_burnin_steps=0, #start collecting data on first step
@@ -242,6 +220,7 @@ class network(object):
             tf.exp(tf.minimum(kernel_results.log_accept_ratio, 0.)))
         self.loss = -tf.reduce_mean(kernel_results.accepted_results.target_log_prob)
         
+        #Setup the Markov Chain for the hyper parameters
         self.hyper_states_MCMC, hyper_kernel_results = tfp.mcmc.sample_chain(
             num_results=num_results,
             num_burnin_steps=0, #start collecting data on first step
@@ -258,20 +237,25 @@ class network(object):
             tf.exp(tf.minimum(hyper_kernel_results.log_accept_ratio, 0.)))
         self.hyper_loss = -tf.reduce_mean(hyper_kernel_results.accepted_results.target_log_prob)
         
-    def train(self, epochs, startPriorUpdate, updatePriorsWait, updatePriorsEpochs, startSampling, samplingStep, mean, sd,folderName=None):
+        
+    def train(self, epochs, startSampling, samplingStep, mean, sd, folderName=None, 
+              networksPerFile=1000, returnPredictions=False):
         """Trains the network
         Arguements:
             * Epochs: Number of training cycles
-            * updatePriorsWait: Number of epochs between priror updates
-            * updatePriorsEpochs: Number of training cycles for priors
             * startSampling: Number of epochs before networks start being saved
             * samplingStep: Epochs between sampled networks
             * mean: true mean of output distribution
             * sd: true sd of output distribution
+            * folderName: name of folder for saved networks
+            * networksPerFile: number of networks saved in a given file
+            * returnPredictions: whether to return the prediction from the network
             
         Returns:
-            * results: the output of the network when sampled
+            * results: the output of the network when sampled (if returnPrediction=True)
         """
+        
+        #Create the folder and files for the networks
         filePath=None
         files=[]
         if(folderName is not None):
@@ -279,29 +263,29 @@ class network(object):
             if(not os.path.isdir(filePath)):
                 os.mkdir(filePath)
             for n in range(len(self.vars_)):
-                files.append(open(filePath+"/"+str(n)+".txt", "wb"))
+                files.append(open(filePath+"/"+str(n)+".0"+".txt", "wb"))
             files.append(open(filePath+"/summary.txt", "wb"))
-                
-            
-            
         
-        self.results=[]
-        logits=self.genLogits(False)
+        if(returnPredictions):
+            self.results=[]
+        logits=self.predict(False, self.states) #prediction placeholder
         result, squaredError, percentError=self.metrics(logits, True, False, mean, sd)
-        with tf.Session() as sess:
+        #get a prediction, squared error, and percent error
         
+        with tf.Session() as sess:
             init_op = tf.global_variables_initializer()
             init_op.run()
-        
-            iter_=0
             
+            iter_=0
             while(iter_<epochs): #Main training loop
+                #check that the vars are not tensors
                 for n in range(len(self.vars_)):
                     if(tf.contrib.framework.is_tensor(self.vars_[n])):
                         self.vars_[n]=sess.run(self.vars_[n])
                 for n in range(len(self.hyperVars)):
                             if(tf.contrib.framework.is_tensor(self.hyperVars[n])):
                                 self.hyperVars[n]=sess.run(self.hyperVars[n])
+                #Training step
                 [
                     nextStates,
                     loss_,
@@ -330,15 +314,31 @@ class network(object):
                 for n in range(len(self.vars_)):
                     self.vars_[n]=nextStates[n][-1]
                 iter_+=1
+                
+                #Print the state of the training
                 print('iter:{:>2}  Network loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
                           iter_, loss_, step_size_, avg_acceptance_ratio_))
                 print('Hyper loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
                                 hyperLoss_, hyper_step_size_, hyper_avg_acceptance_ratio_))
                 print('squaredError{: 9.5f} percentDifference{: 7.3f}'.format(squaredError_, percentError_))
-                self.results.append(result_)
-                if(filePath is not None):
-                    for n in range(len(files)-1):    
-                        np.savetxt(files[n],self.vars_[n])
+                
+                #Record prediction
+                if(iter_>startSampling and (iter_-1)%samplingStep==0):
+                    if(returnPredictions):                    
+                        self.results.append(result_)
+                    if(filePath is not None):
+                        for n in range(len(files)-1):    
+                            np.savetxt(files[n],self.vars_[n])
+                #Create new files to record network
+                if(iter_>startSampling and (iter_-1-startSampling)%5000==0):
+                    for file in files[:-1]:
+                        file.close()
+                    temp=[]
+                    for n in range(len(self.vars_)):
+                        temp.append(open(filePath+"/"+str(n)+"."+str(iter_//5000)+".txt", "wb"))
+                    files=temp+files[-1]
+        
+        #Update the summary file            
         file=files[-1]
         for n in range(len(self.vars_)):
             val=""
@@ -349,4 +349,5 @@ class network(object):
         file.write((str(epochs)+" "+str(len(self.vars_))).encode("utf-8"))
         for file in files:
             file.close()
-        return(self.results)
+        if(returnPredictions):
+            return(self.results)
