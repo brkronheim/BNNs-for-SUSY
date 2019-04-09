@@ -11,10 +11,11 @@ class network(object):
     a Bayesian Neural Network using Hamiltonian Monte Carlo and then training
     the network.
     """
-    def __init__(self, dtype, trainX, trainY, validateX, validateY):
+    def __init__(self, dtype, inputDims, trainX, trainY, validateX, validateY):
         """
         Arguments:
             * dtype: data type for Tensors
+            * inputDims: dimension of input vector
             * trainX: the training data input
             * trainY: the training data output
             * validateX: the validation data input
@@ -23,10 +24,10 @@ class network(object):
         """
         self.dtype = dtype
 
-        self.trainX = tf.reshape(tf.constant(trainX, dtype=self.dtype),[len(trainX),19])
+        self.trainX = tf.reshape(tf.constant(trainX, dtype=self.dtype),[len(trainX),inputDims])
         self.trainY = tf.constant(trainY, dtype=self.dtype)        
 
-        self.validateX = tf.reshape(tf.constant(validateX, dtype=self.dtype),[len(validateX),19])
+        self.validateX = tf.reshape(tf.constant(validateX, dtype=self.dtype),[len(validateX),inputDims])
         self.validateY = tf.constant(validateY, dtype=self.dtype)        
 
         self.vars_=[] #List with the current weight and bias values
@@ -330,13 +331,13 @@ class network(object):
                         for n in range(len(files)-1):    
                             np.savetxt(files[n],self.vars_[n])
                 #Create new files to record network
-                if(iter_>startSampling and (iter_-1-startSampling)%5000==0):
+                if(iter_>startSampling and (iter_-1-startSampling)%networksPerFile*samplingStep==0):
                     for file in files[:-1]:
                         file.close()
                     temp=[]
                     for n in range(len(self.vars_)):
-                        temp.append(open(filePath+"/"+str(n)+"."+str(iter_//5000)+".txt", "wb"))
-                    files=temp+files[-1]
+                        temp.append(open(filePath+"/"+str(n)+"."+str(iter_//networksPerFile)+".txt", "wb"))
+                    files=temp+[files[-1]]
         
         #Update the summary file            
         file=files[-1]
