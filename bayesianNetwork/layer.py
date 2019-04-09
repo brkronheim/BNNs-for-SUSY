@@ -51,21 +51,22 @@ class DenseLayer(object):
         
         #Starting weight mean, weight SD, bias mean, and bias SD
         self.firstHypers=np.float32([weightsMean, weightsSD, biasesMean, biasesSD])
+
             
         #Placeholders for the weights, biases, and their means and SDs for use in HMC
-        weights_chain_start = tf.placeholder(dtype, shape=(self.outputDims, self.inputDims))
-        bias_chain_start = tf.placeholder(dtype, shape=(self.outputDims, 1))
+        self.weights_chain_start = tf.placeholder(dtype, shape=(self.outputDims, self.inputDims))
+        self.bias_chain_start = tf.placeholder(dtype, shape=(self.outputDims, 1))
         
-        self.chains=[weights_chain_start, bias_chain_start]
+        self.chains=[self.weights_chain_start, self.bias_chain_start]
         
-        weight_mean_chain_start = tf.placeholder(dtype, shape=())
-        weight_SD_chain_start = tf.placeholder(dtype, shape=())
+        self.weight_mean_chain_start = tf.placeholder(dtype, shape=())
+        self.weight_SD_chain_start = tf.placeholder(dtype, shape=())
         
-        bias_mean_chain_start = tf.placeholder(dtype, shape=())
-        bias_SD_chain_start = tf.placeholder(dtype, shape=())
+        self.bias_mean_chain_start = tf.placeholder(dtype, shape=())
+        self.bias_SD_chain_start = tf.placeholder(dtype, shape=())
         
-        self.hyper_chains=[weight_mean_chain_start, weight_SD_chain_start,
-                      bias_mean_chain_start, bias_SD_chain_start]
+        self.hyper_chains=[self.weight_mean_chain_start, self.weight_SD_chain_start,
+                      self.bias_mean_chain_start, self.bias_SD_chain_start]
     
         
     def calculateProbs(self, weightBias):
@@ -138,8 +139,9 @@ class DenseLayer(object):
         prob+=tf.reduce_sum(val)
         val=multivariateLogProb(tf.square(biasesSD),biasesMean,biases)
         prob+=tf.reduce_sum(val)
-        return(prob)
         
+
+        return(prob)
         
     def sample(self):
         """Creates randomized weight and bias tensors based off 
@@ -150,16 +152,15 @@ class DenseLayer(object):
             * tempBiases: randomized bias tensor
         """
         
-        tempWeights = tf.random.normal((self.outputDims, self.inputDims),
+        tempWeights = tf.random_normal((self.outputDims, self.inputDims),
                                        mean=self.firstHypers[0],
                                        stddev=self.firstHypers[1])
-        tempBiases = tf.random.normal((self.outputDims, 1),
+        tempBiases = tf.random_normal((self.outputDims, 1),
                                        mean=self.firstHypers[2],
                                        stddev=self.firstHypers[3])
         
         return(tempWeights, tempBiases)
 
-    
     def expand(self, current):
         """Expands tensors to that they are of rank 2
         
@@ -175,7 +176,6 @@ class DenseLayer(object):
                 constant_values=1)
         expanded=tf.reshape(current, currentShape)
         return(expanded)
-    
     
     def predict(self,inputTensor, weightBias):
         """Calculates the output of the layer based on the given input tensor
