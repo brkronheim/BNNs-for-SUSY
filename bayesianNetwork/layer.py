@@ -10,9 +10,9 @@ class DenseLayer(object):
     """Creates a 1 Dimensional Dense Bayesian Layer.
     
     Currently, the starting weight and bias mean values are 0.0 with a standard
-    deviation of 1.0. The distribution that these values are subject to have these
-    values as their means, and a standard deviation of 2.0 for the means and
-    1.0 for the standard deviations.
+    deviation of 1.0/sqrt(outputDims). The distribution that these values are 
+    subject to have these values as their means, and a standard deviation of 
+    2.0/sqrt(outputDims).
     """        
     def __init__(self, inputDims, outputDims, dtype=np.float32,seed=1):
         """
@@ -27,27 +27,27 @@ class DenseLayer(object):
         self.inputDims=inputDims
         self.outputDims=outputDims
         self.dtype=dtype
-                
         self.seed=seed
             
         #Weight mean value and mean distribution
         weightsMean=0.0
         self.weightsMeanHyper=tfd.MultivariateNormalDiag(loc=[weightsMean],
-                    scale_diag=[2.0])
+                    scale_diag=[.2])
+        
         #weight SD value and SD distribution
-        weightsSD=1.0
+        weightsSD=1/((self.outputDims)**(0.5))
         self.weightsSDHyper=tfd.MultivariateNormalDiag(loc=[weightsSD],
-                    scale_diag=[1.0])
+                    scale_diag=[1/((self.outputDims)**(0.5))])
         
         #bias mean value and mean distribution
         biasesMean=0.0
         self.biasesMeanHyper=tfd.MultivariateNormalDiag(loc=[biasesMean],
-                    scale_diag=[2.0])
+                    scale_diag=[.2])
 
         #bias SD value and SD distribution
-        biasesSD=1.0
+        biasesSD=1/((self.outputDims)**(0.5))
         self.biasesSDHyper=tfd.MultivariateNormalDiag(loc=[biasesSD],
-                    scale_diag=[1.0])
+                    scale_diag=[2/((self.outputDims)**(0.5))])
         
         #Starting weight mean, weight SD, bias mean, and bias SD
         self.firstHypers=np.float32([weightsMean, weightsSD, biasesMean, biasesSD])
@@ -89,9 +89,9 @@ class DenseLayer(object):
         prob=0
 
         #Calculate the probability of the paramaters given the current hypers
-        val=multivariateLogProb(tf.square(weightsSD),weightsMean,weights)
+        val=multivariateLogProb(weightsSD,weightsMean,weights)/(self.inputDims*self.outputDims)
         prob+=tf.reduce_sum(val)
-        val=multivariateLogProb(tf.square(biasesSD),biasesMean,biases)
+        val=multivariateLogProb(biasesSD,biasesMean,biases)/(self.outputDims)
         prob+=tf.reduce_sum(val)
         return(prob)
         
@@ -135,11 +135,10 @@ class DenseLayer(object):
         biasesSD*=tf.ones(shape=(self.outputDims))
 
         #Calculate probability of weights and biases given new hypers
-        val=multivariateLogProb(tf.square(weightsSD),weightsMean,weights)
+        val=multivariateLogProb(weightsSD,weightsMean,weights)/(self.inputDims*self.outputDims)
         prob+=tf.reduce_sum(val)
-        val=multivariateLogProb(tf.square(biasesSD),biasesMean,biases)
+        val=multivariateLogProb(biasesSD,biasesMean,biases)/(self.outputDims)
         prob+=tf.reduce_sum(val)
-        
 
         return(prob)
         
