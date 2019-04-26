@@ -11,7 +11,7 @@ class network(object):
     a Bayesian Neural Network using Hamiltonian Monte Carlo and then training
     the network.
     """
-    def __init__(self, dtype, inputDims, trainX, trainY, validateX, validateY):
+    def __init__(self, dtype, inputDims, trainX, trainY, validateX, validateY,mean,sd):
         """
         Arguments:
             * dtype: data type for Tensors
@@ -23,6 +23,9 @@ class network(object):
         
         """
         self.dtype = dtype
+        
+        self.mean=mean
+        self.sd=sd
 
         self.trainX = tf.reshape(tf.constant(trainX, dtype=self.dtype),[len(trainX),inputDims])
         self.trainY = tf.constant(trainY, dtype=self.dtype)        
@@ -100,9 +103,8 @@ class network(object):
             * prob: log probability of network values and network prediction
         """
 
-        #probability of the output
-        prob=tf.reduce_sum(self.make_response_likelihood(argv).log_prob(self.trainY))
         
+        prob=tf.reduce_sum(self.make_response_likelihood(argv).log_prob(self.trainY))
         #probability of the network parameters
         index=0
         for n in range(len(self.layers)):
@@ -202,7 +204,7 @@ class network(object):
         
         self.step_size = tf.Variable(np.array(stepSize, self.dtype))
         self.hyper_step_size = tf.Variable(np.array(hyperStepSize, self.dtype))
-        num_results = 2 #number of markov chain draws
+        num_results = 1 #number of markov chain draws
         
         #Setup the Markov Chain for the network parameters
         self.states_MCMC, kernel_results = tfp.mcmc.sample_chain(
@@ -255,6 +257,7 @@ class network(object):
         Returns:
             * results: the output of the network when sampled (if returnPrediction=True)
         """
+        
         
         #Create the folder and files for the networks
         filePath=None
@@ -314,15 +317,25 @@ class network(object):
                 ], feed_dict={tuple(self.states+self.hyperStates): tuple(self.vars_+self.hyperVars)})
                 for n in range(len(self.vars_)):
                     self.vars_[n]=nextStates[n][-1]
+                for n in range(len(self.hyperVars)):
+                    self.hyperVars[n]=nextHyperStates[n][-1]
                 iter_+=1
                 
-                #Print the state of the training
                 print('iter:{:>2}  Network loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
                           iter_, loss_, step_size_, avg_acceptance_ratio_))
                 print('Hyper loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
                                 hyperLoss_, hyper_step_size_, hyper_avg_acceptance_ratio_))
                 print('squaredError{: 9.5f} percentDifference{: 7.3f}'.format(squaredError_, percentError_))
+                print()
                 
+                #Create new files to record network
+                if(iter_>startSampling and (iter_-1-startSampling)%(networksPerFile*samplingStep)==0):
+                    for file in files[:-1]:
+                        file.close()
+                    temp=[]
+                    for n in range(len(self.vars_)):
+                        temp.append(open(filePath+"/"+str(n)+"."+str(int(iter_//networksPerFile))+".txt", "wb"))
+                    files=temp+[files[-1]]
                 #Record prediction
                 if(iter_>startSampling and (iter_-1)%samplingStep==0):
                     if(returnPredictions):                    
@@ -330,14 +343,6 @@ class network(object):
                     if(filePath is not None):
                         for n in range(len(files)-1):    
                             np.savetxt(files[n],self.vars_[n])
-                #Create new files to record network
-                if(iter_>startSampling and (iter_-1-startSampling)%networksPerFile*samplingStep==0):
-                    for file in files[:-1]:
-                        file.close()
-                    temp=[]
-                    for n in range(len(self.vars_)):
-                        temp.append(open(filePath+"/"+str(n)+"."+str(iter_//networksPerFile)+".txt", "wb"))
-                    files=temp+[files[-1]]
         
         #Update the summary file            
         file=files[-1]
@@ -347,7 +352,11 @@ class network(object):
                 val+=str(sizes)+" "
             val=val.strip()+"\n"
             file.write(val.encode("utf-8"))
-        file.write((str(epochs)+" "+str(len(self.vars_))).encode("utf-8"))
+        numNetworks=(epochs-startSampling)//samplingStep
+        numFiles=numNetworks//networksPerFile
+        if(numNetworks%networksPerFile!=0):
+            numFiles+=1
+        file.write((str(numNetworks)+" "+str(len(numFiles))+" "+str(len(self.vars_))).encode("utf-8"))
         for file in files:
             file.close()
         if(returnPredictions):
