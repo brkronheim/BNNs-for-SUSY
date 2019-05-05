@@ -4,10 +4,12 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
+from paramAdapter import paramAdapter
+
 tfd = tfp.distributions
 
 class network(object):
-    """ An object used for storing all of the variables required to create
+    """An object used for storing all of the variables required to create
     a Bayesian Neural Network using Hamiltonian Monte Carlo and then training
     the network.
     """
@@ -20,7 +22,8 @@ class network(object):
             * trainY: the training data output
             * validateX: the validation data input
             * validateY: the validation data output
-        
+            * mean: the mean used to scale trainY and validateY
+            * sd: standard deviation used to scale trainY and validateY
         """
         self.dtype = dtype
         
@@ -46,7 +49,7 @@ class network(object):
         """Make a prediction and assign it a distribution
         
         Arguments:
-            *argv:an undetermined number of tensors containg the weights
+            *argv: an undetermined number of tensors containg the weights
             and biases
         Returns:
             *result: a normal distribution centered about the prediction with
@@ -70,6 +73,7 @@ class network(object):
             * mean: mean value used for unshifiting a distribution
             * sd: sd value used for unscalling a distribution
         Returns:
+            * logits: output from the network
             * squaredError: the mean squared error of predictions from the network
             * percentError: the percent error of the predictions from the network
         
@@ -193,17 +197,33 @@ class network(object):
                 self.hyperVars.append(vals)
             
             
-    def setupMCMC(self, stepSize, hyperStepSize, leapfrog, hyperLeapfrog):
+    def setupMCMC(self, stepSize, stepMin, stepMax, leapfrog, leapMin, leapMax,
+                  hyperStepSize, hyperLeapfrog, cores):
         """Sets up the MCMC algorithms
         Arguments:
             * stepSize: the starting step size for the weights and biases
-            * hyperStepSize: the starting step size for the hyper parameters
+            * stepMin: the minimum step size
+            * stepMax: the maximum step size
             * leapfrog: number of leapfrog steps for weights and biases
+            * leapMin: the minimum number of leapfrog steps
+            * leapMax: the maximum number of leapfrog steps
+            * hyperStepSize: the starting step size for the hyper parameters
             * hyperLeapfrog: leapfrog steps for hyper parameters
+            * cores: number of cores to use
+        Returns nothing
         """
         
-        self.step_size = tf.Variable(np.array(stepSize, self.dtype))
+        #Adapt the step size and number of leapfrog steps
+        self.adapt=paramAdapter(stepSize,leapfrog,stepMin,stepMax,leapMin,leapMax,
+                                5,100,4,0.1,cores)
+        self.step_size = np.float32(stepSize)
+        self.leapfrog = np.int64(leapfrog)
+        self.step_size_placeholder=tf.placeholder(dtype=tf.float32,shape=())
+        self.leapfrog_placeholder=tf.placeholder(dtype=tf.int64,shape=())
+        
+        
         self.hyper_step_size = tf.Variable(np.array(hyperStepSize, self.dtype))
+        
         num_results = 1 #number of markov chain draws
         
         #Setup the Markov Chain for the network parameters
@@ -211,24 +231,25 @@ class network(object):
             num_results=num_results,
             num_burnin_steps=0, #start collecting data on first step
             current_state=self.states, #starting parts of chain 
-            parallel_iterations=20, 
+            parallel_iterations=cores, 
             kernel=tfp.mcmc.HamiltonianMonteCarlo( #use HamiltonianMonteCarlo to step in the chain
                 target_log_prob_fn=self.calculateProbs, #used to calculate log density
-                num_leapfrog_steps=leapfrog,
-                step_size=self.step_size,
-                step_size_update_fn=tfp.mcmc.make_simple_step_size_update_policy(decrement_multiplier=0.01), 
+                num_leapfrog_steps=self.leapfrog_placeholder,
+                step_size=self.step_size_placeholder,
+                step_size_update_fn=None, 
                 state_gradients_are_stopped=True,
                 seed=100))
         self.avg_acceptance_ratio = tf.reduce_mean(
             tf.exp(tf.minimum(kernel_results.log_accept_ratio, 0.)))
         self.loss = -tf.reduce_mean(kernel_results.accepted_results.target_log_prob)
         
+        
         #Setup the Markov Chain for the hyper parameters
         self.hyper_states_MCMC, hyper_kernel_results = tfp.mcmc.sample_chain(
             num_results=num_results,
             num_burnin_steps=0, #start collecting data on first step
             current_state=self.hyperStates, #starting parts of chain 
-            parallel_iterations=20,
+            parallel_iterations=cores,
             kernel=tfp.mcmc.HamiltonianMonteCarlo( #use HamiltonianMonteCarlo to step in the chain
                 target_log_prob_fn=self.calculateHyperProbs, #used to calculate log density
                 num_leapfrog_steps=hyperLeapfrog,
@@ -257,7 +278,6 @@ class network(object):
         Returns:
             * results: the output of the network when sampled (if returnPrediction=True)
         """
-        
         
         #Create the folder and files for the networks
         filePath=None
@@ -293,7 +313,6 @@ class network(object):
                 [
                     nextStates,
                     loss_,
-                    step_size_,
                     avg_acceptance_ratio_,
                     result_, 
                     squaredError_, 
@@ -305,7 +324,6 @@ class network(object):
                 ] = sess.run([
                     self.states_MCMC,
                     self.loss,
-                    self.step_size,
                     self.avg_acceptance_ratio,
                     result, 
                     squaredError, 
@@ -314,19 +332,24 @@ class network(object):
                     self.hyper_loss,
                     self.hyper_step_size,
                     self.hyper_avg_acceptance_ratio,
-                ], feed_dict={tuple(self.states+self.hyperStates): tuple(self.vars_+self.hyperVars)})
+                ], feed_dict={tuple(self.states+self.hyperStates+[self.leapfrog_placeholder,self.step_size_placeholder]):
+                                tuple(self.vars_+self.hyperVars+[self.leapfrog,self.step_size])})
+                
+                
                 for n in range(len(self.vars_)):
                     self.vars_[n]=nextStates[n][-1]
                 for n in range(len(self.hyperVars)):
                     self.hyperVars[n]=nextHyperStates[n][-1]
                 iter_+=1
                 
-                print('iter:{:>2}  Network loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
-                          iter_, loss_, step_size_, avg_acceptance_ratio_))
-                print('Hyper loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
-                                hyperLoss_, hyper_step_size_, hyper_avg_acceptance_ratio_))
                 print('squaredError{: 9.5f} percentDifference{: 7.3f}'.format(squaredError_, percentError_))
                 print()
+                
+                print('iter:{:>2}  Network loss:{: 9.3f}  step_size:{:.7f} leapfrog_num:{:>4} avg_acceptance_ratio:{:.4f}'.format(
+                          iter_, loss_, self.step_size, self.leapfrog, avg_acceptance_ratio_))
+                print('Hyper loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
+                                hyperLoss_, hyper_step_size_, hyper_avg_acceptance_ratio_))
+                self.step_size, self.leapfrog=self.adapt.update(nextStates)
                 
                 #Create new files to record network
                 if(iter_>startSampling and (iter_-1-startSampling)%(networksPerFile*samplingStep)==0):
@@ -334,7 +357,7 @@ class network(object):
                         file.close()
                     temp=[]
                     for n in range(len(self.vars_)):
-                        temp.append(open(filePath+"/"+str(n)+"."+str(int((iter_-1-startSampling)//samplingStep//networksPerFile))+".txt", "wb"))
+                        temp.append(open(filePath+"/"+str(n)+"."+str(int(iter_//networksPerFile))+".txt", "wb"))
                     files=temp+[files[-1]]
                 #Record prediction
                 if(iter_>startSampling and (iter_-1)%samplingStep==0):
