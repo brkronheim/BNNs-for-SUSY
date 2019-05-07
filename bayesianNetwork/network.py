@@ -198,7 +198,7 @@ class network(object):
             
             
     def setupMCMC(self, stepSize, stepMin, stepMax, leapfrog, leapMin, leapMax,
-                  hyperStepSize, hyperLeapfrog, cores):
+                  hyperStepSize, hyperLeapfrog, burnin, cores):
         """Sets up the MCMC algorithms
         Arguments:
             * stepSize: the starting step size for the weights and biases
@@ -215,7 +215,7 @@ class network(object):
         
         #Adapt the step size and number of leapfrog steps
         self.adapt=paramAdapter(stepSize,leapfrog,stepMin,stepMax,leapMin,leapMax,
-                                5,100,4,0.1,cores)
+                                2,burnin/2,4,0.1,cores)
         self.step_size = np.float32(stepSize)
         self.leapfrog = np.int64(leapfrog)
         self.step_size_placeholder=tf.placeholder(dtype=tf.float32,shape=())
