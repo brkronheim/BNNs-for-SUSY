@@ -34,7 +34,7 @@ class paramAdapter(object):
         """
         self.currentE=e1
         self.currentL=L1
-        self.eGrid=np.linspace(el,eu,num=1000)
+        self.eGrid=np.linspace(el,eu,num=500)
         self.lGrid=np.array(range(Ll,Lu+1))
         self.delta=delta
         kappa=0.2
@@ -153,9 +153,9 @@ class paramAdapter(object):
         #Update E and L if this is not just an averaging step
         if(self.i%self.m==0 and self.i>0):
             u=np.random.uniform(low=0,high=1)
-            p=max(self.i/self.m-self.k+1,1)**(-0.5)
+            self.p=max(self.i/self.m-self.k+1,1)**(-0.5)
             
-            if(u<p): #Over time the probability of updating will decay
+            if(u<self.p): #Over time the probability of updating will decay
                 newPoint=0
                 mean=np.mean(self.currentData)
                 sd=np.std(self.currentData)
@@ -175,6 +175,7 @@ class paramAdapter(object):
                     newK[-1,index]=k
                     newK[index,-1]=k
                 self.K=newK
+
                 
                 self.s=self.a/self.maxR #update scalling constant
                 sigmaNu=np.mean(self.allSD) #Variance of noise
@@ -199,7 +200,6 @@ class paramAdapter(object):
                 temp=self.lGrid[(self.cores-1)*increment:]
                 eList.append(self.eGrid)
                 lList.append(temp)
-                
                 #Start parallel searches, take best result found
                 best=((self.eGrid[0],self.lGrid[0]),0)
                 with Pool(processes=self.cores) as pool:
@@ -210,5 +210,12 @@ class paramAdapter(object):
                 #Pick the state with the highest upper confidence bound                
                 self.currentE=np.float32(best[0][0])
                 self.currentL=np.int64(best[0][1])
+                
+                if(size==50):
+                    self.K=self.K[1:,1:]
+                    self.previousGamma=self.previousGamma[1:]
+                    self.allData=self.allData[1:]
+                    self.allSD=self.allSD[1:]
+                
         self.i+=1
         return(self.currentE,self.currentL)
