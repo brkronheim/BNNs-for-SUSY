@@ -60,7 +60,7 @@ def main(hidden, width, epochs, burnin, increment, cores, name):
     neuralNet.add(DenseLayer(width,outputDims, seed=seed))
     
     #Setup the markov chain monte carlo
-    neuralNet.setupMCMC(0.00005, 0.005, 20, 20)
+    neuralNet.setupMCMC(0.00005, 0.000001, 0.00005, 100, 20, 1000, 0.001, 20, burnin, cores)
     
     #Train the network
     neuralNet.train(epochs, burnin, increment, normInfo[0][0], normInfo[0][1],
