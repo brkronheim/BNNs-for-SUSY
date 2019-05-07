@@ -18,9 +18,9 @@ class network(object):
         Arguments:
             * dtype: data type for Tensors
             * inputDims: dimension of input vector
-            * trainX: the training data input
+            * trainX: the training data input, shape is n by inputDims
             * trainY: the training data output
-            * validateX: the validation data input
+            * validateX: the validation data input, shape is n by inputDims
             * validateY: the validation data output
             * mean: the mean used to scale trainY and validateY
             * sd: standard deviation used to scale trainY and validateY
