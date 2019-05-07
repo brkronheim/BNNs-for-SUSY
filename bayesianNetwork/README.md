@@ -1,5 +1,5 @@
 ## Usage
-Through the use of the objects contained within this folder it is possible to easily make Bayesian Neural Networks for regression learning problems. The file train.py contains an excellent example with click implemented for ease of use in the command line. More generally, in order to use this code you must import network, Dense Layer, and an activation such as Relu this can be done as follows:
+Through the use of the objects contained within this folder it is possible to easily make Bayesian Neural Networks for regression learning problems. The file train.py contains an excellent example with click implemented for ease of use in the command line. More generally, in order to use this code you must import network, Dense Layer, and an activation such as Relu. This can be done as follows:
 ```
 from layer import DenseLayer
 import network
