@@ -144,7 +144,7 @@ def main(name, out, iters):
                 if((k+1)%decile==0):
                     print("{:.2f} percent of data analyzed".format(100*(k+1)/len(allPredictions[0,:])))
                     
-                        print("Number outside of 3 standard deviations:", len(wrong))
+            print("Number outside of 3 standard deviations:", len(wrong))
             print("Number between 2 and 3 standard deviations:", len(sd3))
             print("Number between 1 and 2 standard deviations:", len(sd2))
             print("Number inside 1 standard deviation:", len(sd1))
