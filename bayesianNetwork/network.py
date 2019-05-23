@@ -357,7 +357,7 @@ class network(object):
                         file.close()
                     temp=[]
                     for n in range(len(self.vars_)):
-                        temp.append(open(filePath+"/"+str(n)+"."+str(int(iter_//networksPerFile))+".txt", "wb"))
+                        temp.append(open(filePath+"/"+str(n)+"."+str(int(iter_//(networksPerFile*samplingStep)))+".txt", "wb"))
                     files=temp+[files[-1]]
                 #Record prediction
                 if(iter_>startSampling and (iter_-1)%samplingStep==0):
@@ -379,7 +379,7 @@ class network(object):
         numFiles=numNetworks//networksPerFile
         if(numNetworks%networksPerFile!=0):
             numFiles+=1
-        file.write((str(numNetworks)+" "+str(len(numFiles))+" "+str(len(self.vars_))).encode("utf-8"))
+        file.write((str(numNetworks)+" "+str(numFiles)+" "+str(len(self.vars_))).encode("utf-8"))
         for file in files:
             file.close()
         if(returnPredictions):
