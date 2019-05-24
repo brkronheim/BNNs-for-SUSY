@@ -63,8 +63,8 @@ def main(hidden, width, epochs, burnin, increment, cores, name):
     neuralNet.setupMCMC(0.00005, 0.000001, 0.00005, 100, 20, 1000, 0.001, 20, burnin, cores)
     
     #Train the network
-    neuralNet.train(epochs, burnin, increment, normInfo[0][0], normInfo[0][1],
-                    folderName=name, networksPerFile=50, returnPredictions=False)
+    neuralNet.train(epochs, burnin, increment, mean=normInfo[0][0], sd=normInfo[0][1],
+                    scaleExp=True, folderName=name, networksPerFile=50, returnPredictions=False)
 
 if(__name__=="__main__"):
     main()
