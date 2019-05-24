@@ -262,7 +262,7 @@ class network(object):
         self.hyper_loss = -tf.reduce_mean(hyper_kernel_results.accepted_results.target_log_prob)
         
         
-    def train(self, epochs, startSampling, samplingStep, mean, sd, folderName=None, 
+    def train(self, epochs, startSampling, samplingStep, mean=0, sd=1, scaleExp=False, folderName=None, 
               networksPerFile=1000, returnPredictions=False):
         """Trains the network
         Arguements:
@@ -271,6 +271,7 @@ class network(object):
             * samplingStep: Epochs between sampled networks
             * mean: true mean of output distribution
             * sd: true sd of output distribution
+            * scaleExp: whether the metrics should be scaled via exp
             * folderName: name of folder for saved networks
             * networksPerFile: number of networks saved in a given file
             * returnPredictions: whether to return the prediction from the network
@@ -293,7 +294,7 @@ class network(object):
         if(returnPredictions):
             self.results=[]
         logits=self.predict(False, self.states) #prediction placeholder
-        result, squaredError, percentError=self.metrics(logits, True, False, mean, sd)
+        result, squaredError, percentError=self.metrics(logits, scaleExp, False, mean, sd)
         #get a prediction, squared error, and percent error
         
         with tf.Session() as sess:
