@@ -73,8 +73,8 @@ Additionally, the paramAdapter object creates a grid to search possible step siz
 
 The last thing to do is actually tell the model to start learning this is done with the following command:
 ```
-def train(self, epochs, startSampling, samplingStep, mean, sd, folderNam, 
-              networksPerFile, returnPredictions)
+def train(self, epochs, startSampling, samplingStep, mean=0, sd=1, scaleExp=False, folderName=None, 
+          networksPerFile=1000, returnPredictions=False):
 ```
 The arguments have the following meanings:
 
@@ -83,6 +83,7 @@ The arguments have the following meanings:
 * samplingStep: Epochs between sampled networks
 * mean: true mean of output distribution
 * sd: true sd of output distribution
+* scaleExp: whether the metrics should be scaled via exp
 * folderName: name of folder for saved networks
 * networksPerFile: number of networks saved in a given file
 * returnPredictions: whether to return the prediction from the network
