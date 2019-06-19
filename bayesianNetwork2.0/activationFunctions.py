@@ -83,7 +83,7 @@ class Prelu(object):
     def exponentialLogProb(self, rate, x):
         #rate cannot be smaller than 0
         rate=tf.maximum(rate,0)
-        logProb=-rate*x+tf.log(rate)        
+        logProb=-rate*x+tf.math.log(rate)        
         return(logProb)
         
     
@@ -163,7 +163,7 @@ class Prelu(object):
         
         """
         slopes=slopes[0]
-        slopes=tf.maximum(0,slopes)
+        slopes=tf.maximum(0.0,slopes)
         activated=[inputTensor[i,:]*slopes[i] for i in range(self.inputDims)]
         result=tf.maximum(inputTensor, activated)
         return(self.expand(result))
