@@ -11,10 +11,13 @@ from layer import DenseLayer
 import network
 from activationFunctions import Prelu, Relu
 
-tf.enable_eager_execution()
+import time
+
+start = time.time()
 
 #This supresses many deprecation warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
+warnings.filterwarnings("ignore", category=UserWarning) 
 
 #This tells tensorflow to only use CPUs. Assuming there are a lot of CPUs
 #avaiable this may be faster than running on a GPU due to the parallel nature
@@ -33,10 +36,17 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
 def main(hidden, width, epochs, burnin, increment, cores, name):
-    trainIn=np.loadtxt("fullTrainInput.txt",delimiter="\t",skiprows=1)
-    trainOut=np.loadtxt("fullTrainOutput.txt",delimiter="\t",skiprows=1)
-    valIn=np.loadtxt("fullValidateInput.txt",delimiter="\t",skiprows=0)
-    valOut=np.loadtxt("fullValidateOutput.txt",delimiter="\t",skiprows=0)
+    trainIn=np.load("trainInput.npy")
+    trainOut=np.load("trainOutput.npy")
+    trainOut=np.reshape(trainOut,(len(trainOut),1))
+
+    valIn=np.load("validateInput.npy")
+    valOut=np.load("validateOutput.npy")
+    valOut=np.reshape(valOut,(len(valOut),1))
+
+    testIn=np.load("testInput.npy")
+    testOut=np.load("testOutput.npy")
+    testOut=np.reshape(testOut,(len(testOut),1))
     
     #Normalize the training and output data and collect the values used to do so
     normInfo, data = normalizeData(trainIn, trainOut, valIn, valOut) 
@@ -54,20 +64,26 @@ def main(hidden, width, epochs, burnin, increment, cores, name):
     #Add the layers
     seed=0
     neuralNet.add(DenseLayer(inputDims,width, seed=seed))
-    neuralNet.add(Prelu(width))
+    #neuralNet.add(Prelu(width))
+    neuralNet.add(Relu())
     seed+=1000
     for n in range(hidden-1):
         neuralNet.add(DenseLayer(width,width, seed=seed))
-        neuralNet.add(Prelu(width))
+        #neuralNet.add(Prelu(width))
+        neuralNet.add(Relu())
         seed+=1000
     neuralNet.add(DenseLayer(width,outputDims, seed=seed))
     
     #Setup the markov chain monte carlo
-    neuralNet.setupMCMC(0.00005, 0.000001, 0.00005, 100, 20, 1000, 0.001, 20, burnin, cores)
+    neuralNet.setupMCMC(0.00001, 0.00001, 0.00003, 100, 20, 1000, 0.001, 20, burnin, cores)
     
     #Train the network
     neuralNet.train(epochs, burnin, increment, mean=normInfo[0][0], sd=normInfo[0][1],
                     scaleExp=True, folderName=name, networksPerFile=50, returnPredictions=False)
+    
+    end = time.time()
+    print()
+    print("elapsed time:", end - start)
 
 if(__name__=="__main__"):
     main()
