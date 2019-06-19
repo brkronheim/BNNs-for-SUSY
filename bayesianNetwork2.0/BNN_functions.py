@@ -26,9 +26,11 @@ def normalizeData(trainIn, trainOut, valIn, valOut):
 
     normInfo=[] #stores the data required to un-normalize the data
     
+    print(trainOut.shape)
+    
     #Take the log of the output distributions
-    trainOutput=np.log(trainOut[:,1])
-    valOutput=np.log(valOut[:,1])
+    trainOutput=np.log(trainOut[:,0])
+    valOutput=np.log(valOut[:,0])
     
     #Combine the output from the train and validation
     fullOutput=trainOutput.tolist()+valOutput.tolist()
@@ -89,6 +91,7 @@ def multivariateLogProb(sigma, mu, x):
             (dif))+k*tf.math.log(2*math.pi))   
     return(tf.linalg.diag_part(logLikelihood))
 
+@tf.function
 def cauchyLogProb(gamma, x0, x):
     """ Calculates the log probability of x given mu and sigma defining 
     a multivariate normal distribution. 
@@ -101,8 +104,14 @@ def cauchyLogProb(gamma, x0, x):
     Returns:
         * prob: an m-dimensional vector with the log-probabilities of x
     """
-    
-    prob=tf.log(1+((x-x0)/gamma)**2)-tf.math.scalar_mul(tf.log(np.float32(math.pi*gamma)),tf.ones_like(x))
+    a=tf.math.log(1+((x-x0)/gamma)**2)
+    b1=math.pi*gamma
+    b2=tf.cast(b1,tf.float32)
+    b=tf.math.log(b2)
+    c=tf.ones_like(x)
+    d=-tf.math.scalar_mul(b,c)
+    #b=-tf.math.scalar_mul(tf.math.log(np.float32(math.pi*gamma)),tf.ones_like(x))
+    prob=a+d
     return(prob)
 
 
