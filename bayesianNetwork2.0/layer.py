@@ -35,9 +35,9 @@ class DenseLayer(object):
                     scale_diag=[.2])
         
         #weight SD value and SD distribution
-        weightsGamma=1/((self.outputDims)**(0.5))
+        weightsGamma=0.5
         self.weightsGammaHyper=tfd.MultivariateNormalDiag(loc=[weightsGamma],
-                    scale_diag=[1/((self.outputDims)**(0.5))])
+                    scale_diag=[0.5])
         
         #bias mean value and mean distribution
         biasesx0=0.0
@@ -45,9 +45,9 @@ class DenseLayer(object):
                     scale_diag=[.2])
 
         #bias SD value and SD distribution
-        biasesGamma=1/((self.outputDims)**(0.5))
+        biasesGamma=0.5
         self.biasesGammaHyper=tfd.MultivariateNormalDiag(loc=[biasesGamma],
-                    scale_diag=[2/((self.outputDims)**(0.5))])
+                    scale_diag=[0.5])
         
         #Starting weight mean, weight SD, bias mean, and bias SD
         self.hypers=np.float32([weightsx0, weightsGamma, biasesx0, biasesGamma])
@@ -139,10 +139,12 @@ class DenseLayer(object):
         
         tempWeights = tf.random.normal((self.outputDims, self.inputDims),
                                        mean=self.hypers[0],
-                                       stddev=self.hypers[1])
+                                       stddev=(2/self.outputDims)**(0.5),
+                                      seed=self.seed)
         tempBiases = tf.random.normal((self.outputDims, 1),
                                        mean=self.hypers[2],
-                                       stddev=self.hypers[3])
+                                       stddev=(2/self.outputDims)**(0.5),
+                                       seed=self.seed+1)
         
         return([tempWeights, tempBiases])
 
