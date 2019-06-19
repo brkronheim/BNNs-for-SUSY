@@ -36,9 +36,7 @@ class network(object):
         self.validateX = tf.reshape(tf.constant(validateX, dtype=self.dtype),[len(validateX),inputDims])
         self.validateY = tf.constant(validateY, dtype=self.dtype)        
 
-        self.vars_=[] #List with the current weight and bias values
-        self.hyperVars=[] #List with the current values of the hyper parameters
-
+        
         self.states=[] #List with the weight and bias state placeholders
         self.hyperStates=[] # List with hyper parameter state placeholders
 
@@ -96,7 +94,7 @@ class network(object):
         percentError=tf.reduce_mean(input_tensor=tf.multiply(tf.abs(tf.divide(tf.subtract(scaled, real), real)), 100))
         return(predictions, squaredError, percentError)
         
-    #@tf.function    
+    @tf.function    
     def calculateProbs(self, *argv):
         """Calculates the log probability of the current network values
         as well as the log probability of their prediction.
@@ -121,7 +119,7 @@ class network(object):
         #print("prob", prob)
         return(prob)
         
-    #@tf.function    
+    @tf.function    
     def calculateHyperProbs(self, *argv):
         """Calculates the log probability of the current hyper parameters
         
@@ -249,7 +247,7 @@ class network(object):
             if(numTensors>0):
                 self.layers[n].updateParameters(self.states[index:index+numHyperTensors])
                 index+=numTensors
-                
+               
     def updateKernels(self):
         self.step_size, self.leapfrog = self.adapt.update(self.states)
         #Setup the Markov Chain for the network parameters
@@ -330,7 +328,7 @@ class network(object):
             filePath=os.path.join(os.getcwd(), folderName)
             if(not os.path.isdir(filePath)):
                 os.mkdir(filePath)
-            for n in range(len(self.vars_)):
+            for n in range(len(self.states)):
                 files.append(open(filePath+"/"+str(n)+".0"+".txt", "wb"))
             files.append(open(filePath+"/summary.txt", "wb"))
         
@@ -340,7 +338,7 @@ class network(object):
         #get a prediction, squared error, and percent error
         
         iter_=0
-        tf.set_random_seed(50)
+        tf.random.set_seed(50)
         while(iter_<epochs): #Main training loop
             #check that the vars are not tensors
             self.stepMCMC()
@@ -367,7 +365,7 @@ class network(object):
                 for file in files[:-1]:
                     file.close()
                 temp=[]
-                for n in range(len(self.vars_)):
+                for n in range(len(self.states)):
                     temp.append(open(filePath+"/"+str(n)+"."+str(int(iter_//(networksPerFile*samplingStep)))+".txt", "wb"))
                 files=temp+[files[-1]]
             #Record prediction
@@ -376,13 +374,13 @@ class network(object):
                     self.results.append(result_)
                 if(filePath is not None):
                     for n in range(len(files)-1):    
-                        np.savetxt(files[n],self.vars_[n])
+                        np.savetxt(files[n],self.states[n])
 
         #Update the summary file            
         file=files[-1]
-        for n in range(len(self.vars_)):
+        for n in range(len(self.states)):
             val=""
-            for sizes in self.vars_[n].shape:
+            for sizes in self.states[n].shape:
                 val+=str(sizes)+" "
             val=val.strip()+"\n"
             file.write(val.encode("utf-8"))
@@ -390,7 +388,7 @@ class network(object):
         numFiles=numNetworks//networksPerFile
         if(numNetworks%networksPerFile!=0):
             numFiles+=1
-        file.write((str(numNetworks)+" "+str(numFiles)+" "+str(len(self.vars_))).encode("utf-8"))
+        file.write((str(numNetworks)+" "+str(numFiles)+" "+str(len(self.states))).encode("utf-8"))
         for file in files:
             file.close()
         if(returnPredictions):
