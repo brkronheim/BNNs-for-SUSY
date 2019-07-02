@@ -334,7 +334,6 @@ class network(object):
         
         if(returnPredictions):
             self.results=[]
-        logits=self.predict(False, self.states) #prediction placeholder
         #get a prediction, squared error, and percent error
         
         iter_=0
@@ -343,6 +342,7 @@ class network(object):
             #check that the vars are not tensors
             self.stepMCMC()
             
+            trainResult, trainSquaredError, trainPercentError=self.metrics(self.predict(train=True), scaleExp, True, mean, sd)
             result, squaredError, percentError=self.metrics(self.predict(train=False), scaleExp, False, mean, sd)
             
             
@@ -354,7 +354,9 @@ class network(object):
                       iter_, self.loss, self.step_size, self.leapfrog, self.avg_acceptance_ratio))
             print('Hyper loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
                             self.hyper_loss*1, self.hyper_step_size*1, self.hyper_avg_acceptance_ratio*1))
-            print('squaredError{: 9.5f} percentDifference{: 7.3f}'.format(squaredError, percentError))
+            print('training squared error{: 9.5f}, training percent error{: 7.3f}'.format(trainSquaredError, trainPercentError))
+            
+            print('validation squared error{: 9.5f}, validation percent error{: 7.3f}'.format(squaredError, percentError))
             
             self.updateKernels()
             
