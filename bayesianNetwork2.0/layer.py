@@ -14,11 +14,13 @@ class DenseLayer(object):
     subject to have these values as their means, and a standard deviation of 
     2.0/sqrt(outputDims).
     """        
-    def __init__(self, inputDims, outputDims, dtype=np.float32,seed=1):
+    def __init__(self, inputDims, outputDims, weights=None, biases=None, dtype=np.float32,seed=1):
         """
         Arguments:
             * inputDims: number of input dimensions
             * outputDims: number of output dimensions
+            * weights: list of starting weight matrices
+            * biases: list of starting bias vectors
             * dtype: data type of input and output values
             * seed: seed used for random numbers
         """
@@ -53,7 +55,10 @@ class DenseLayer(object):
         self.hypers=np.float32([weightsx0, weightsGamma, biasesx0, biasesGamma])
 
         #Starting weights and biases
-        self.parameters = self.sample()    
+        if(weights is None):
+            self.parameters = self.sample()
+        else:
+            self.parameters=[weights, biases]
         
     def calculateProbs(self, weightBias):
         """Calculates the log probability of a set of weights and biases given
