@@ -5,7 +5,7 @@ import click
 import numpy as np
 import tensorflow as tf
 
-from BNN_functions import normalizeData
+from BNN_functions import normalizeData, trainBasic
 
 from layer import DenseLayer
 import network
