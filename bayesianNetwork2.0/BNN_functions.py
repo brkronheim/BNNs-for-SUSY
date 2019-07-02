@@ -174,3 +174,52 @@ def predict(inputMatrix, numNetworks, numMatrices, matrices):
         initialResults[m]=current
         
     return(initialResults)
+
+def trainBasic(hidden, inputDims, outputDims, width, cycles, epochs, patience, trainIn, trainOut, valIn, valOut):
+    """Trains a basic neural network and returns its weights. Uses the Nadam optimizer and a learning rate of 
+    0.01 which decays by a factor of 10 each cycle.
+    
+    Arguments:
+        * hidden: number of hidden layers
+        * inputDims: input dimension
+        * outputDims: output dimension
+        * width: width of hidden layers
+        * cycles: number of training cycles with decaying learning rates
+        * epochs: number of epochs per cycle
+        * patience: early stopping patience
+        * trainIn: training input data
+        * trainOut: training output data
+        * valIn: validation input data
+        * valOut: validation output data
+    Returns:
+        * weights: list containing all weight matrices
+        * biases: list containing all bias vectors
+    """
+    tf.random.set_seed(1000)
+    model = tf.keras.Sequential()
+    model.add(tf.keras.layers.Dense(width, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0), kernel_initializer='glorot_uniform', input_shape=(inputDims, ), activation='relu'))
+    for n in range(hidden-1):
+        model.add(tf.keras.layers.Dense(width, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0), kernel_initializer='glorot_uniform', activation='relu'))
+    model.add(tf.keras.layers.Dense(outputDims, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0),  kernel_initializer='glorot_uniform', activation='linear'))
+    callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True)
+    for x in range(cycles):
+
+        model.compile(optimizer=tf.keras.optimizers.Nadam(0.001*(10**(-x))),
+                  loss='mean_squared_error',
+                  metrics=['mean_absolute_error', 'mean_squared_error'])
+        model.summary()
+        model.fit(trainIn, trainOut, validation_data=(valIn, valOut), epochs=epochs, batch_size=32, callbacks=[callback])
+    
+    
+    
+    weights=[]
+    biases=[]
+    for layer in model.layers:
+        weightBias=layer.get_weights()
+        if(len(weightBias)==2):
+            weights.append(weightBias[0].T)
+            bias=weightBias[1]
+            bias=np.reshape(bias, (len(bias),1))
+            biases.append(bias)
+    return(weights, biases)
+    
