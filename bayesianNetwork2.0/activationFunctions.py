@@ -39,7 +39,7 @@ class Softmax(object):
     
 class Leaky_relu(object):
     """Leaky relu activation function"""
-    def __init__(self, alpha=0.2):
+    def __init__(self, alpha=0.3):
         self.numTensors=0
         self.numHyperTensors=0
         self.alpha=alpha
