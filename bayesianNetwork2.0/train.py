@@ -9,7 +9,7 @@ from BNN_functions import normalizeData
 
 from layer import DenseLayer
 import network
-from activationFunctions import Prelu, Relu
+from activationFunctions import Relu, Elu, Leaky_relu
 
 import time
 
@@ -25,6 +25,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
+
+        
 @click.command()
 @click.option('--hidden', default=3, help='Number of hidden layers')
 @click.option('--width', default=50, help='Width of the hidden layers')
@@ -33,9 +35,13 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 @click.option('--increment', default=50, help='Epochs between saving networks')
 @click.option('--cores', default=4, help='Number of cores which can be used')
 @click.option('--name', default="Default", help='Name of network')
+@click.option('--nnCycles', default=2, help='Number of training cycles for normal neural net')
+@click.option('--nnEpochs', default=30, help='Number of epochs per neural net cycle')
+@click.option('--nnPatience', default=30, help='Early stopping patience for neural net')
 
 
-def main(hidden, width, epochs, burnin, increment, cores, name):
+
+def main(hidden, width, epochs, burnin, increment, cores, name, nnCycles, nnEpochs, patience):
     trainIn=np.load("trainInput.npy")
     trainOut=np.load("trainOutput.npy")
     trainOut=np.reshape(trainOut,(len(trainOut),1))
@@ -44,10 +50,6 @@ def main(hidden, width, epochs, burnin, increment, cores, name):
     valOut=np.load("validateOutput.npy")
     valOut=np.reshape(valOut,(len(valOut),1))
 
-    testIn=np.load("testInput.npy")
-    testOut=np.load("testOutput.npy")
-    testOut=np.reshape(testOut,(len(testOut),1))
-    
     #Normalize the training and output data and collect the values used to do so
     normInfo, data = normalizeData(trainIn, trainOut, valIn, valOut) 
     
@@ -56,6 +58,12 @@ def main(hidden, width, epochs, burnin, increment, cores, name):
     inputDims=19
     
     dtype=np.float32
+    weights=[None]*hidden
+    biases=[None]*hidden
+    if(cycles>0):
+        weights, biases = trainBasic(hidden, inputDims, outputDims, width, nnCycles, nnEpochs, patience, data[0], data[1], data[2], data[3])
+    
+    
     
     #(datatype, input dimesions, training input, training output, validation input,
     #validation output, output mean, output sd)
@@ -63,19 +71,19 @@ def main(hidden, width, epochs, burnin, increment, cores, name):
     
     #Add the layers
     seed=0
-    neuralNet.add(DenseLayer(inputDims,width, seed=seed))
+    neuralNet.add(DenseLayer(inputDims,width, weights=weights[0], biases=biases[0], seed=seed))
     #neuralNet.add(Prelu(width))
     neuralNet.add(Relu())
     seed+=1000
     for n in range(hidden-1):
-        neuralNet.add(DenseLayer(width,width, seed=seed))
+        neuralNet.add(DenseLayer(width,width, weights=weights[n+1], biases=biases[n+1], seed=seed))
         #neuralNet.add(Prelu(width))
         neuralNet.add(Relu())
         seed+=1000
-    neuralNet.add(DenseLayer(width,outputDims, seed=seed))
+    neuralNet.add(DenseLayer(width,outputDims, weights=weights[-1], biases=biases[-1], seed=seed))
     
     #Setup the markov chain monte carlo
-    neuralNet.setupMCMC(0.00001, 0.00001, 0.00003, 100, 20, 1000, 0.001, 20, burnin, cores)
+    neuralNet.setupMCMC(0.00001, 0.000005, 0.000015, 100, 20, 500, 0.00001, 20, burnin, cores)
     
     #Train the network
     neuralNet.train(epochs, burnin, increment, mean=normInfo[0][0], sd=normInfo[0][1],
