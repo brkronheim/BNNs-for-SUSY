@@ -4,7 +4,7 @@ import math
 
 from scipy import stats
 
-def normalizeData(trainIn, trainOut, valIn, valOut):
+def normalizeData(trainIn, trainOut, valIn, valOut, log=True):
     """Normalizes the training and validation data to improve network training.
     
     The output data is normalized by taking its log and then scaling according
@@ -25,13 +25,18 @@ def normalizeData(trainIn, trainOut, valIn, valOut):
     """
 
     normInfo=[] #stores the data required to un-normalize the data
-    
+    print()
+    print(valOut.shape)
     print(trainOut.shape)
     
-    #Take the log of the output distributions
-    trainOutput=np.log(trainOut[:,0])
-    valOutput=np.log(valOut[:,0])
     
+    #Take the log of the output distributions
+    if(log):
+        trainOutput=np.log(trainOut[:,0])
+        valOutput=np.log(valOut[:,0])
+    else:
+        trainOutput=trainOut[:,0]
+        valOutput=valOut[:,0]
     #Combine the output from the train and validation
     fullOutput=trainOutput.tolist()+valOutput.tolist()
     
@@ -64,32 +69,32 @@ def normalizeData(trainIn, trainOut, valIn, valOut):
     
     return(normInfo,data)
 
-def multivariateLogProb(sigma, mu, x):
+@tf.function
+def multivariateLogProb(sigmaIn, mu, x):
     """ Calculates the log probability of x given mu and sigma defining 
     a multivariate normal distribution. 
     
     Arguments:
-        * sigma: an n-dimensional vector with the standard deviations of
+        * sigmaIn: an n-dimensional vector with the standard deviations of
         * the distribution
         * mu: an n-dimensional vector with the means of the distribution
         * x: m n-dimensional vectors to have their probabilities calculated
     Returns:
         * prob: an m-dimensional vector with the log-probabilities of x
     """
+    sigma=sigmaIn
     
-    sigma*=sigma
     sigma=tf.maximum(sigma, np.float32(10**(-16)))
     sigma=tf.minimum(sigma, np.float32(10**(16)))
-    logDet=tf.reduce_sum(input_tensor=tf.math.log(sigma))
+    logDet=2*tf.reduce_sum(input_tensor=tf.math.log(sigma))
     k=tf.size(input=sigma, out_type=tf.float32)
-    inv=tf.divide(tf.eye(k),sigma)
-    dif=tf.subtract(x,mu)
-    
-    sigma=tf.linalg.diag(sigma)
-    logLikelihood=-0.5*(logDet+tf.matmul(
-            tf.matmul(tf.transpose(a=dif),inv),
-            (dif))+k*tf.math.log(2*math.pi))   
-    return(tf.linalg.diag_part(logLikelihood))
+    print(k)
+    inv=tf.divide(1,sigma)
+    difSigma=tf.math.multiply(inv, tf.subtract(x,mu))
+    difSigmaSquared=tf.reduce_sum(tf.math.multiply(difSigma, difSigma))
+    logLikelihood=-0.5*(logDet+difSigmaSquared
+            +k*tf.math.log(2*math.pi))   
+    return(logLikelihood)
 
 @tf.function
 def cauchyLogProb(gamma, x0, x):
@@ -104,13 +109,11 @@ def cauchyLogProb(gamma, x0, x):
     Returns:
         * prob: an m-dimensional vector with the log-probabilities of x
     """
+    
     a=tf.math.log(1+((x-x0)/gamma)**2)
-    b1=math.pi*gamma
-    b2=tf.cast(b1,tf.float32)
-    b=tf.math.log(b2)
+    b=tf.math.log(tf.cast(math.pi*gamma,tf.float32))
     c=tf.ones_like(x)
     d=-tf.math.scalar_mul(b,c)
-    #b=-tf.math.scalar_mul(tf.math.log(np.float32(math.pi*gamma)),tf.ones_like(x))
     prob=a+d
     return(prob)
 
@@ -134,15 +137,15 @@ def loadNetworks(directoryPath):
     numNetworks=int(summary[-1][0])
     numMatrices=int(summary[-1][2])
     numFiles=int(summary[-1][1])
-
+    
+    numNetworks//=numFiles
+    
     matrices=[]
     for n in range(numMatrices):
         weightsSplitDims=(numNetworks*numFiles,int(summary[n][0]),int(summary[n][1]))
         weights0=np.zeros(weightsSplitDims)
         for m in range(numFiles):
             weights=np.loadtxt(directoryPath+str(n)+"."+str(m)+".txt", dtype=np.float32,ndmin=2)
-            print(weights.shape)
-            print(weightsSplitDims)
             for k in range(numNetworks):
                 weights0[m*numNetworks+k,:,:]=weights[weightsSplitDims[1]*k:weightsSplitDims[1]*(k+1),:weightsSplitDims[2]]
         matrices.append(weights0)
@@ -175,9 +178,10 @@ def predict(inputMatrix, numNetworks, numMatrices, matrices):
         
     return(initialResults)
 
-def trainBasic(hidden, inputDims, outputDims, width, cycles, epochs, patience, trainIn, trainOut, valIn, valOut):
-    """Trains a basic neural network and returns its weights. Uses the Nadam optimizer and a learning rate of 
-    0.01 which decays by a factor of 10 each cycle.
+def trainBasicRegression(hidden, inputDims, outputDims, width, cycles, epochs, patience, trainIn, trainOut, valIn, valOut):
+    """Trains a basic regression neural network and returns its weights. Uses the amsgrad optimizer and a learning rate of 
+    0.01 which decays by a factor of 10 each cycle. The activation function is PReLU. Saves the network as "backup"
+    in case something goes wrong with the BNN code so the network does not need to be retrained.
     
     Arguments:
         * hidden: number of hidden layers
@@ -194,32 +198,108 @@ def trainBasic(hidden, inputDims, outputDims, width, cycles, epochs, patience, t
     Returns:
         * weights: list containing all weight matrices
         * biases: list containing all bias vectors
+        * activation: list containing all activation vectors
     """
+    
+    #Set seed
     tf.random.set_seed(1000)
+    
+    #Create model
     model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Dense(width, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0), kernel_initializer='glorot_uniform', input_shape=(inputDims, ), activation='relu'))
+    
+    model.add(tf.keras.layers.Dense(width, kernel_initializer='glorot_uniform', input_shape=(inputDims, )))
+    model.add(tf.keras.layers.PReLU())
+    
     for n in range(hidden-1):
-        model.add(tf.keras.layers.Dense(width, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0), kernel_initializer='glorot_uniform', activation='relu'))
-    model.add(tf.keras.layers.Dense(outputDims, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0),  kernel_initializer='glorot_uniform', activation='linear'))
-    callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True)
+        model.add(tf.keras.layers.Dense(width, kernel_initializer='glorot_uniform'))
+        model.add(tf.keras.layers.PReLU())
+        
+    model.add(tf.keras.layers.Dense(outputDims, kernel_initializer='glorot_uniform'))
+    
+    callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True)
+    
+    #Train with decreasing learning rate
     for x in range(cycles):
-
-        model.compile(optimizer=tf.keras.optimizers.Nadam(0.001*(10**(-x))),
+        model.compile(optimizer=tf.keras.optimizers.Adam(0.01*(10**(-x)),amsgrad=True),
                   loss='mean_squared_error',
                   metrics=['mean_absolute_error', 'mean_squared_error'])
         model.summary()
         model.fit(trainIn, trainOut, validation_data=(valIn, valOut), epochs=epochs, batch_size=32, callbacks=[callback])
     
+    #Save the backup 
+    model.save("backup")
     
-    
+    #Extract weights and biases
     weights=[]
     biases=[]
+    activation=[]
     for layer in model.layers:
         weightBias=layer.get_weights()
+        print(len(weightBias), weightBias)
         if(len(weightBias)==2):
             weights.append(weightBias[0].T)
             bias=weightBias[1]
             bias=np.reshape(bias, (len(bias),1))
             biases.append(bias)
-    return(weights, biases)
+        if(len(weightBias)==1):
+            activation.append(weightBias[0])
+            
+    return(weights, biases, activation)
+
+def trainBasicClassification(hidden, inputDims, outputDims, width, cycles, epochs, patience, trainIn, trainOut, valIn, valOut):
+    """ Trains a basic binary classification neural network and returns its weights. Uses the amsgrad optimizer and a learning rate of 
+    0.01 which decays by a factor of 10 each cycle. The activation function is PReLU. Saves the network as "backup"
+    in case something goes wrong with the BNN code so the network does not need to be retrained.
     
+    Arguments:
+        * hidden: number of hidden layers
+        * inputDims: input dimension
+        * outputDims: output dimension
+        * width: width of hidden layers
+        * cycles: number of training cycles with decaying learning rates
+        * epochs: number of epochs per cycle
+        * patience: early stopping patience
+        * trainIn: training input data
+        * trainOut: training output data
+        * valIn: validation input data
+        * valOut: validation output data
+    Returns:
+        * weights: list containing all weight matrices
+        * biases: list containing all bias vectors
+        * activation: list containing all activation vectors
+    """
+    
+    tf.random.set_seed(1000)
+    model = tf.keras.Sequential()
+    model.add(tf.keras.layers.Dense(width, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0), kernel_initializer='glorot_uniform', input_shape=(inputDims, ), activation='relu'))
+    for n in range(hidden-1):
+        model.add(tf.keras.layers.Dense(width, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0), kernel_initializer='glorot_uniform', activation='relu'))
+    model.add(tf.keras.layers.Dense(outputDims, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0),  kernel_initializer='glorot_uniform', activation='sigmoid'))
+    callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True)
+    for x in range(cycles):
+
+        model.compile(optimizer=tf.keras.optimizers.Nadam(0.001*(10**(-x))),
+                  loss=tf.keras.losses.BinaryCrossentropy(),
+                  metrics=['accuracy','mse'])
+        model.summary()
+        model.fit(trainIn, trainOut, validation_data=(valIn, valOut), epochs=epochs, batch_size=64, callbacks=[callback])
+    
+    #Save the backup 
+    model.save("backup")
+    
+    #Extract weights and biases
+    weights=[]
+    biases=[]
+    activation=[]
+    for layer in model.layers:
+        weightBias=layer.get_weights()
+        print(len(weightBias), weightBias)
+        if(len(weightBias)==2):
+            weights.append(weightBias[0].T)
+            bias=weightBias[1]
+            bias=np.reshape(bias, (len(bias),1))
+            biases.append(bias)
+        if(len(weightBias)==1):
+            activation.append(weightBias[0])
+            
+    return(weights, biases, activation)
