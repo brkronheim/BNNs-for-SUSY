@@ -69,19 +69,14 @@ class Leaky_relu(object):
     
 class Prelu(object):
     """Prelu activation function"""
-    """Creates a 1 Dimensional Dense Bayesian Layer.
-    
-    Currently, the starting weight and bias mean values are 0.0 with a standard
-    deviation of 1.0/sqrt(outputDims). The distribution that these values are 
-    subject to have these values as their means, and a standard deviation of 
-    2.0/sqrt(outputDims).
-    """        
-    def __init__(self, inputDims, dtype=np.float32, alpha=0.2, seed=1, activation=None):
+     
+    def __init__(self, inputDims, dtype=np.float32, alpha=0.2, activation=None, seed=1):
         """
         Arguments:
             * inputDims: number of input dimensions
-            * outputDims: number of output dimensions
             * dtype: data type of input and output values
+            * alpha: Single custom starting slope value
+            * activation: optional custom values for starting slope values
             * seed: seed used for random numbers
         """
         self.numTensors=1 #Number of tensors used for predictions
@@ -107,9 +102,18 @@ class Prelu(object):
         
     @tf.function
     def exponentialLogProb(self, rate, x):
-        #rate cannot be smaller than 0
-        rate=tf.maximum(rate,0)
+        """Calcualtes the log probability of an exponential distribution.
+        
+        Arguments:
+            * rate: rate parameter for the distribution
+            * x: input value
+        Returns:
+            * logProb: log probability of x
+        """
+        
+        rate=tf.absolute(rate)
         logProb=-rate*x+tf.math.log(rate)        
+        
         return(logProb)
         
     @tf.function
@@ -123,13 +127,10 @@ class Prelu(object):
         Returns:
             * prob: log prob of weights and biases given their distributions
         """
-        #Create the tensors used to calculate probability
-        prob=0
-
-        #Calculate the probability of the paramaters given the current hypers
-
+        
         val=self.exponentialLogProb(self.hypers[0],slopes)
         prob=tf.reduce_sum(input_tensor=val)
+        
         return(prob)
         
     @tf.function
@@ -146,6 +147,7 @@ class Prelu(object):
             * prob: log probability of weights and biases given the new hyper parameters 
             and the probability of the new hyper parameters given their priors
         """
+        
         rate=tf.maximum(hypers[0],0.01)
         slopes=tf.maximum(slopes[0],0)
         prob=0
@@ -190,7 +192,7 @@ class Prelu(object):
         
         """
         slopes=slopes[0]
-        #slopes=tf.maximum(0.0,slopes)
+        
         slopes=tf.reshape(slopes, (len(slopes),1))
         activated=tf.multiply(slopes, inputTensor)
         result=tf.where(tf.math.less(inputTensor,0), activated, inputTensor)
