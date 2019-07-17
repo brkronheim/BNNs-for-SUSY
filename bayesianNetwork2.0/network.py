@@ -1,10 +1,12 @@
 import os
+import time
 
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
 
 from paramAdapter import paramAdapter
+from BNN_functions import multivariateLogProb
 
 tfd = tfp.distributions
 
@@ -42,25 +44,48 @@ class network(object):
 
         self.layers=[] #List of all the layers
 
-
-    def make_response_likelihood(self, *argv):
-        """Make a prediction and assign it a distribution
+    @tf.function
+    def make_response_likelihood_regression(self, *argv, realVals=None):
+        """Make a prediction and predict its probability from a multivariate normal distribution
         
         Arguments:
-            *argv: an undetermined number of tensors containg the weights
+            * argv: an undetermined number of tensors containg the weights
             and biases
+            * realVals: the actual values for the predicted quantities
         Returns:
-            *result: a normal distribution centered about the prediction with
-            a standard deviation of 0.1
+            * result: the log probabilities of the real vals given the predicted values
         """
+        
         current=self.predict(True, argv[0])
-        #Prediction distribution
-        result=tfd.Normal(
-            loc=current,
-            scale=np.array(.1, current.dtype.as_numpy_dtype))
-        return(result) 
+        print(current.shape)
+        current=tf.transpose(current)
+        sigma=tf.ones_like(current)*0.1
+        realVals=tf.reshape(realVals, current.shape)
+        result=multivariateLogProb(sigma, current, realVals)
+        return(result)
+        
     
-    #@tf.function    
+    def make_response_likelihood_classification(self, *argv, realVals=None):
+        """Make a prediction and predict its probability from a Bernoulli normal distribution
+        
+        Arguments:
+            * argv: an undetermined number of tensors containg the weights
+            and biases
+            * realVals: the actual values for the predicted quantities
+        Returns:
+            * result: the log probabilities of the real vals given the predicted values
+        """
+        
+        current=self.predict(True, argv[0])
+        current=tf.cast(tf.clip_by_value(current,1e-8,1-1e-7), tf.float32)
+        print("cs",current.shape)
+        #Prediction distribution
+        result=tfd.Bernoulli(
+            probs=current)
+        print("bst",result.batch_shape_tensor())
+        result=result
+        return(result)
+    
     def metrics(self, predictions, scaleExp, train, mean=1, sd=1):
         """Calculates the average squared error and percent difference of the 
         current network
@@ -83,16 +108,23 @@ class network(object):
         if(train):
             y=self.trainY
         
-        squaredError=tf.reduce_mean(input_tensor=tf.math.squared_difference(predictions, y))
-        scaled=tf.add(tf.multiply(predictions, sd), mean)
+        squaredError=tf.reduce_mean(input_tensor=tf.math.squared_difference(predictions, tf.transpose(y)))
+
+        
+        
+        scaled=tf.add(tf.multiply(tf.transpose(predictions), sd), mean)
         real=tf.add(tf.multiply(y, sd), mean)
+
         if(scaleExp):
             scaled=tf.exp(scaled)
             real=tf.exp(real)
-        else:
-            scaled=logits
+
+        real=tf.reshape(real,scaled.shape)
         percentError=tf.reduce_mean(input_tensor=tf.multiply(tf.abs(tf.divide(tf.subtract(scaled, real), real)), 100))
-        return(predictions, squaredError, percentError)
+        accuracy=1-tf.reduce_mean(tf.abs(real-tf.round(scaled)))
+        
+        
+        return(predictions, squaredError, percentError, accuracy)
         
     @tf.function    
     def calculateProbs(self, *argv):
@@ -106,17 +138,20 @@ class network(object):
             * prob: log probability of network values and network prediction
         """
 
+
+        #prob=tf.reduce_sum(input_tensor=self.make_response_likelihood(argv).log_prob(tf.transpose(self.trainY)))
+        prob = tf.reduce_sum(self.make_response_likelihood(argv, realVals=self.trainY))
         
-        prob=tf.reduce_sum(input_tensor=self.make_response_likelihood(argv).log_prob(self.trainY))
+        
         #probability of the network parameters
         index=0
-        #print(len(argv))
+
         for n in range(len(self.layers)):
             numTensors=self.layers[n].numTensors
             if(numTensors>0):    
                 prob+=self.layers[n].calculateProbs(argv[index:index+numTensors])
                 index+=numTensors
-        #print("prob", prob)
+
         return(prob)
         
     @tf.function    
@@ -141,7 +176,6 @@ class network(object):
                 index+=numTensors
         return(prob)
 
-    #@tf.function
     def predict(self, train, *argv):
         """Makes a prediction
         
@@ -162,13 +196,19 @@ class network(object):
         x=self.trainX
         if(not train):
             x=self.validateX
-
-        prediction=tf.transpose(a=x)
-        index=0
-        for n in range(len(self.layers)):
-            numTensors=self.layers[n].numTensors
-            prediction=self.layers[n].predict(prediction,tensors[index:index+numTensors])
-            index+=numTensors
+         
+        @tf.function()
+        def innerPrediction(x, layers):
+            prediction=tf.transpose(a=x)
+            index=0
+            for n in range(len(self.layers)):
+                #print(prediction.shape)
+                numTensors=layers[n].numTensors
+                prediction=layers[n].predict(prediction,tensors[index:index+numTensors])
+                index+=numTensors
+            return(prediction)
+        prediction = innerPrediction(x, self.layers)
+                
         return(prediction)
     
 
@@ -232,7 +272,7 @@ class network(object):
                 target_log_prob_fn=self.calculateHyperProbs, #used to calculate log density
                 num_leapfrog_steps=hyperLeapfrog,
                 step_size=self.hyper_step_size,
-                step_size_update_fn=tfp.mcmc.make_simple_step_size_update_policy(num_adaptation_steps=50, decrement_multiplier=0.01), 
+                step_size_update_fn=tfp.mcmc.make_simple_step_size_update_policy(num_adaptation_steps=int(burnin*0.8), decrement_multiplier=0.01), 
                 state_gradients_are_stopped=True)
         
     def updateStates(self):
@@ -304,7 +344,7 @@ class network(object):
         
         
     def train(self, epochs, startSampling, samplingStep, mean=0, sd=1, scaleExp=False, folderName=None, 
-              networksPerFile=1000, returnPredictions=False):
+              networksPerFile=1000, returnPredictions=False, regression=True):
         """Trains the network
         Arguements:
             * Epochs: Number of training cycles
@@ -320,7 +360,15 @@ class network(object):
         Returns:
             * results: the output of the network when sampled (if returnPrediction=True)
         """
+        #Create response likelihood
         
+        if regression:
+            self.make_response_likelihood = self.make_response_likelihood_regression
+        else:
+            self.make_response_likelihood = self.make_response_likelihood_classification
+            
+            
+            
         #Create the folder and files for the networks
         filePath=None
         files=[]
@@ -339,11 +387,12 @@ class network(object):
         iter_=0
         tf.random.set_seed(50)
         while(iter_<epochs): #Main training loop
+            startTime=time.time()
             #check that the vars are not tensors
             self.stepMCMC()
             
-            trainResult, trainSquaredError, trainPercentError=self.metrics(self.predict(train=True), scaleExp, True, mean, sd)
-            result, squaredError, percentError=self.metrics(self.predict(train=False), scaleExp, False, mean, sd)
+            trainResult, trainSquaredError, trainPercentError, trainAccuracy=self.metrics(self.predict(train=True), scaleExp, True, mean, sd)
+            result, squaredError, percentError, accuracy =self.metrics(self.predict(train=False), scaleExp, False, mean, sd)
             
             
             iter_+=1
@@ -354,9 +403,12 @@ class network(object):
                       iter_, self.loss, self.step_size, self.leapfrog, self.avg_acceptance_ratio))
             print('Hyper loss:{: 9.3f}  step_size:{:.7f}  avg_acceptance_ratio:{:.4f}'.format(
                             self.hyper_loss*1, self.hyper_step_size*1, self.hyper_avg_acceptance_ratio*1))
-            print('training squared error{: 9.5f}, training percent error{: 7.3f}'.format(trainSquaredError, trainPercentError))
-            
-            print('validation squared error{: 9.5f}, validation percent error{: 7.3f}'.format(squaredError, percentError))
+            if(regression):
+                print('training squared error{: 9.5f}, training percent error{: 7.3f}'.format(trainSquaredError, trainPercentError))
+
+                print('validation squared error{: 9.5f}, validation percent error{: 7.3f}'.format(squaredError, percentError))
+            else:
+                print('training accuracy{: 9.5f}, validation accuracy{: 9.5f}'.format(trainAccuracy, accuracy))
             
             self.updateKernels()
             
@@ -377,7 +429,8 @@ class network(object):
                 if(filePath is not None):
                     for n in range(len(files)-1):    
                         np.savetxt(files[n],self.states[n])
-
+            print('Time elapsed:', time.time()-startTime)
+                        
         #Update the summary file            
         file=files[-1]
         for n in range(len(self.states)):
