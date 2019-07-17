@@ -15,6 +15,26 @@ class Relu(object):
     def predict(self,inputTensor,_):
         result=gen_nn_ops.relu(inputTensor)
         return(result)
+    
+class Sigmoid(object):
+    """Sigmoid activation function"""        
+    def __init__(self):
+        self.numTensors=0
+        self.numHyperTensors=0
+
+    def predict(self,inputTensor,_):
+        result=tf.math.sigmoid(inputTensor)
+        return(result)
+    
+class Tanh(object):
+    """Tanh activation function"""        
+    def __init__(self):
+        self.numTensors=0
+        self.numHyperTensors=0
+
+    def predict(self,inputTensor,_):
+        result=tf.math.tanh(inputTensor)
+        return(result)
         
 class Elu(object):
     """Elu activation function"""        
@@ -56,7 +76,7 @@ class Prelu(object):
     subject to have these values as their means, and a standard deviation of 
     2.0/sqrt(outputDims).
     """        
-    def __init__(self, inputDims, dtype=np.float32, alpha=0.2, seed=1):
+    def __init__(self, inputDims, dtype=np.float32, alpha=0.2, seed=1, activation=None):
         """
         Arguments:
             * inputDims: number of input dimensions
@@ -71,22 +91,28 @@ class Prelu(object):
         self.seed=seed
             
         #Starting rate value and hyperRate
-        rate=1.0
-        self.hyperRate=1.0
+        rate=0.3
+        self.hyperRate=0.3
         
         #Starting weight mean, weight SD, bias mean, and bias SD
+        
         self.hypers=np.float32([rate])
 
         #Starting weights and biases
-        self.parameters = [alpha*tf.ones(shape=(inputDims))]    
+        if(activation is None):
+            self.parameters = [alpha*tf.ones(shape=(inputDims))]    
+        else:
+            self.parameters = [activation]
+        #print(self.parameters)
         
+    @tf.function
     def exponentialLogProb(self, rate, x):
         #rate cannot be smaller than 0
         rate=tf.maximum(rate,0)
         logProb=-rate*x+tf.math.log(rate)        
         return(logProb)
         
-    
+    @tf.function
     def calculateProbs(self, slopes):
         """Calculates the log probability of the slopes given
         their distributions in this layer.
@@ -106,7 +132,7 @@ class Prelu(object):
         prob=tf.reduce_sum(input_tensor=val)
         return(prob)
         
-        
+    @tf.function
     def calculateHyperProbs(self, hypers, slopes):
         """Calculates the log probability of a set of weights and biases given
         new distribtuions as well as the probability of the new distribution
@@ -134,7 +160,7 @@ class Prelu(object):
 
         return(prob)
         
-
+    @tf.function
     def expand(self, current):
         """Expands tensors to that they are of rank 2
         
@@ -151,6 +177,7 @@ class Prelu(object):
         expanded=tf.reshape(current, currentShape)
         return(expanded)
     
+    @tf.function
     def predict(self,inputTensor, slopes):
         """Calculates the output of the layer based on the given input tensor
         and weight and bias values
@@ -163,9 +190,10 @@ class Prelu(object):
         
         """
         slopes=slopes[0]
-        slopes=tf.maximum(0.0,slopes)
-        activated=[inputTensor[i,:]*slopes[i] for i in range(self.inputDims)]
-        result=tf.maximum(inputTensor, activated)
+        #slopes=tf.maximum(0.0,slopes)
+        slopes=tf.reshape(slopes, (len(slopes),1))
+        activated=tf.multiply(slopes, inputTensor)
+        result=tf.where(tf.math.less(inputTensor,0), activated, inputTensor)
         return(self.expand(result))
     
     def updateParameters(self, slopes):
