@@ -270,15 +270,23 @@ def trainBasicClassification(hidden, inputDims, outputDims, width, cycles, epoch
     """
     
     tf.random.set_seed(1000)
+    
     model = tf.keras.Sequential()
-    model.add(tf.keras.layers.Dense(width, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0), kernel_initializer='glorot_uniform', input_shape=(inputDims, ), activation='relu'))
+    
+    model.add(tf.keras.layers.Dense(width, kernel_initializer='glorot_uniform', input_shape=(inputDims, )))
+    model.add(tf.keras.layers.PReLU())
+    
     for n in range(hidden-1):
-        model.add(tf.keras.layers.Dense(width, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0), kernel_initializer='glorot_uniform', activation='relu'))
-    model.add(tf.keras.layers.Dense(outputDims, kernel_regularizer=tf.keras.regularizers.l1_l2(0.0,0.0),  kernel_initializer='glorot_uniform', activation='sigmoid'))
+        model.add(tf.keras.layers.Dense(width, kernel_initializer='glorot_uniform'))
+        model.add(tf.keras.layers.PReLU())
+    
+    model.add(tf.keras.layers.Dense(outputDims,  kernel_initializer='glorot_uniform', activation='sigmoid'))
+    
     callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=patience, restore_best_weights=True)
+    
     for x in range(cycles):
 
-        model.compile(optimizer=tf.keras.optimizers.Nadam(0.001*(10**(-x))),
+        model.compile(optimizer=tf.keras.optimizers.Adam(0.001*(10**(-x)), amsgrad=True),
                   loss=tf.keras.losses.BinaryCrossentropy(),
                   metrics=['accuracy','mse'])
         model.summary()
