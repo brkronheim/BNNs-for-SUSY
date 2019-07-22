@@ -52,7 +52,7 @@ class DenseLayer(object):
                     scale_diag=[0.5])
         
         #Starting weight mean, weight SD, bias mean, and bias SD
-        self.hypers=np.float32([weightsx0, weightsGamma, biasesx0, biasesGamma])
+        self.hypers=tf.cast([weightsx0, weightsGamma, biasesx0, biasesGamma], self.dtype)
 
         #Starting weights and biases
         if(weights is None):
@@ -80,9 +80,9 @@ class DenseLayer(object):
         prob=0
 
         #Calculate the probability of the paramaters given the current hypers
-        val=cauchyLogProb(weightsGamma,weightsx0,weights)#/(self.inputDims*self.outputDims)
+        val=cauchyLogProb(weightsGamma,weightsx0,weights, dtype=self.dtype)#/(self.inputDims*self.outputDims)
         prob+=tf.reduce_sum(input_tensor=val)
-        val=cauchyLogProb(biasesGamma,biasesx0,biases)#/(self.outputDims)
+        val=cauchyLogProb(biasesGamma,biasesx0,biases, dtype=self.dtype)#/(self.outputDims)
         prob+=tf.reduce_sum(input_tensor=val)
         return(prob)
         
@@ -106,29 +106,22 @@ class DenseLayer(object):
         biasesGamma=hypers[3]
         weights=weightBias[0]
         biases=weightBias[1]
-        prob=0
-
-        #Calculate probability of new hypers
+        
+        prob=tf.cast(0, self.dtype)
         val=self.weightsx0Hyper.log_prob([[weightsx0]])
-        prob+=tf.reduce_sum(input_tensor=val)
+        prob+=tf.cast(tf.reduce_sum(input_tensor=val),self.dtype)
         val=self.weightsGammaHyper.log_prob([[weightsGamma]])
-        prob+=tf.reduce_sum(input_tensor=val)
+        prob+=tf.cast(tf.reduce_sum(input_tensor=val),self.dtype)
 
         val=self.biasesx0Hyper.log_prob([[biasesx0]])
-        prob+=tf.reduce_sum(input_tensor=val)
+        prob+=tf.cast(tf.reduce_sum(input_tensor=val),self.dtype)
         val=self.biasesGammaHyper.log_prob([[biasesGamma]])
-        prob+=tf.reduce_sum(input_tensor=val)
-
-        #Create tensors for prob calculation
-        #weightsx0*=tf.ones(shape=(self.outputDims,1))
-        #weightsGamma*=tf.ones(shape=(self.outputDims))
-        #biasesx0*=tf.ones(shape=(self.outputDims,1))
-        #biasesGamma*=tf.ones(shape=(self.outputDims))
-
+        prob+=tf.cast(tf.reduce_sum(input_tensor=val),self.dtype)
+        
         #Calculate probability of weights and biases given new hypers
-        val=cauchyLogProb(weightsGamma,weightsx0,weights)#/(self.inputDims*self.outputDims)
+        val=cauchyLogProb(weightsGamma,weightsx0,weights, dtype=self.dtype)#/(self.inputDims*self.outputDims)
         prob+=tf.reduce_sum(input_tensor=val)
-        val=cauchyLogProb(biasesGamma,biasesx0,biases)#/(self.outputDims)
+        val=cauchyLogProb(biasesGamma,biasesx0,biases, dtype=self.dtype)#/(self.outputDims)
         prob+=tf.reduce_sum(input_tensor=val)
 
         return(prob)
@@ -145,11 +138,13 @@ class DenseLayer(object):
         tempWeights = tf.random.normal((self.outputDims, self.inputDims),
                                        mean=self.hypers[0],
                                        stddev=(2/self.outputDims)**(0.5),
-                                      seed=self.seed)
+                                       seed=self.seed,
+                                       dtype=self.dtype)
         tempBiases = tf.random.normal((self.outputDims, 1),
                                        mean=self.hypers[2],
                                        stddev=(2/self.outputDims)**(0.5),
-                                       seed=self.seed+1)
+                                       seed=self.seed+1,
+                                       dtype=self.dtype)
         
         return([tempWeights, tempBiases])
 
@@ -169,6 +164,7 @@ class DenseLayer(object):
         expanded=tf.reshape(current, currentShape)
         return(expanded)
     
+    @tf.function
     def predict(self,inputTensor, weightBias):
         """Calculates the output of the layer based on the given input tensor
         and weight and bias values
@@ -185,8 +181,10 @@ class DenseLayer(object):
         result=tf.add(tf.matmul(weightTensor, inputTensor), biasTensor)
         return(result)
     
+    @tf.function 
     def updateParameters(self, weightBias):
         self.parameters = weightBias
-        
+    
+    @tf.function
     def updateHypers(self, hypers):
         self.hypers = hypers
