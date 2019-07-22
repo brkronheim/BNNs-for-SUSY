@@ -10,6 +10,7 @@ from BNN_functions import multivariateLogProb
 
 tfd = tfp.distributions
 
+
 class network(object):
     """An object used for storing all of the variables required to create
     a Bayesian Neural Network using Hamiltonian Monte Carlo and then training
@@ -44,6 +45,7 @@ class network(object):
 
         self.layers=[] #List of all the layers
 
+
     @tf.function
     def make_response_likelihood_regression(self, *argv, realVals=None):
         """Make a prediction and predict its probability from a multivariate normal distribution
@@ -57,14 +59,15 @@ class network(object):
         """
         
         current=self.predict(True, argv[0])
-        print(current.shape)
         current=tf.transpose(current)
         sigma=tf.ones_like(current)*0.1
         realVals=tf.reshape(realVals, current.shape)
-        result=multivariateLogProb(sigma, current, realVals)
-        return(result)
+        result=multivariateLogProb(sigma, current, realVals, self.dtype)
         
+        return(result)
+
     
+    @tf.function
     def make_response_likelihood_classification(self, *argv, realVals=None):
         """Make a prediction and predict its probability from a Bernoulli normal distribution
         
@@ -77,15 +80,14 @@ class network(object):
         """
         
         current=self.predict(True, argv[0])
-        current=tf.cast(tf.clip_by_value(current,1e-8,1-1e-7), tf.float32)
-        print("cs",current.shape)
+        current=tf.cast(tf.clip_by_value(current,1e-8,1-1e-7), self.dtype)
         #Prediction distribution
         result=tfd.Bernoulli(
             probs=current)
-        print("bst",result.batch_shape_tensor())
-        result=result
         return(result)
     
+    
+    @tf.function    
     def metrics(self, predictions, scaleExp, train, mean=1, sd=1):
         """Calculates the average squared error and percent difference of the 
         current network
@@ -99,8 +101,7 @@ class network(object):
         Returns:
             * logits: output from the network
             * squaredError: the mean squared error of predictions from the network
-            * percentError: the percent error of the predictions from the network
-        
+            * percentError: the percent error of the predictions from the network    
         """
         
         #Get the correct output values
@@ -110,8 +111,6 @@ class network(object):
         
         squaredError=tf.reduce_mean(input_tensor=tf.math.squared_difference(predictions, tf.transpose(y)))
 
-        
-        
         scaled=tf.add(tf.multiply(tf.transpose(predictions), sd), mean)
         real=tf.add(tf.multiply(y, sd), mean)
 
@@ -122,10 +121,10 @@ class network(object):
         real=tf.reshape(real,scaled.shape)
         percentError=tf.reduce_mean(input_tensor=tf.multiply(tf.abs(tf.divide(tf.subtract(scaled, real), real)), 100))
         accuracy=1-tf.reduce_mean(tf.abs(real-tf.round(scaled)))
-        
-        
+                
         return(predictions, squaredError, percentError, accuracy)
-        
+    
+    
     @tf.function    
     def calculateProbs(self, *argv):
         """Calculates the log probability of the current network values
@@ -138,22 +137,18 @@ class network(object):
             * prob: log probability of network values and network prediction
         """
 
-
-        #prob=tf.reduce_sum(input_tensor=self.make_response_likelihood(argv).log_prob(tf.transpose(self.trainY)))
         prob = tf.reduce_sum(self.make_response_likelihood(argv, realVals=self.trainY))
-        
-        
+                
         #probability of the network parameters
         index=0
-
         for n in range(len(self.layers)):
             numTensors=self.layers[n].numTensors
             if(numTensors>0):    
                 prob+=self.layers[n].calculateProbs(argv[index:index+numTensors])
                 index+=numTensors
-
         return(prob)
-        
+    
+    
     @tf.function    
     def calculateHyperProbs(self, *argv):
         """Calculates the log probability of the current hyper parameters
@@ -169,13 +164,15 @@ class network(object):
         for n in range(len(self.layers)):
             numHyperTensors=self.layers[n].numHyperTensors
             numTensors=self.layers[n].numTensors
-            if(numHyperTensors>0):    
+            if(numHyperTensors>0):
+                
                 prob+=self.layers[n].calculateHyperProbs(argv[indexh:indexh+numHyperTensors],
                                  self.states[index:index+numTensors])
                 indexh+=numHyperTensors
                 index+=numTensors
         return(prob)
 
+    
     def predict(self, train, *argv):
         """Makes a prediction
         
@@ -185,8 +182,7 @@ class network(object):
             and biases.
             
         Returns:
-            * prediction: a prediction from the network 
-            
+            * prediction: a prediction from the network     
         """
         tensors=argv
         if(len(tensors)==0):
@@ -202,7 +198,6 @@ class network(object):
             prediction=tf.transpose(a=x)
             index=0
             for n in range(len(self.layers)):
-                #print(prediction.shape)
                 numTensors=layers[n].numTensors
                 prediction=layers[n].predict(prediction,tensors[index:index+numTensors])
                 index+=numTensors
@@ -210,8 +205,8 @@ class network(object):
         prediction = innerPrediction(x, self.layers)
                 
         return(prediction)
-    
 
+    
     def add(self, layer, parameters=None):
         """Adds a new layer to the network
         Arguments:
@@ -231,8 +226,8 @@ class network(object):
         if(layer.numHyperTensors>0):        
             for states in layer.hypers:
                 self.hyperStates.append(states)
-            
-            
+    
+    
     def setupMCMC(self, stepSize, stepMin, stepMax, leapfrog, leapMin, leapMax,
                   hyperStepSize, hyperLeapfrog, burnin, cores):
         """Sets up the MCMC algorithms
@@ -252,11 +247,11 @@ class network(object):
         #Adapt the step size and number of leapfrog steps
         self.adapt=paramAdapter(stepSize,leapfrog,stepMin,stepMax,leapMin,leapMax,
                                 2,burnin/2,4,0.1,cores)
-        self.step_size = np.float32(stepSize)
+        self.step_size = tf.cast(stepSize,self.dtype)
         self.leapfrog = np.int64(leapfrog)
         self.cores=cores
         
-        self.hyper_step_size = tf.Variable(np.array(hyperStepSize, self.dtype))
+        self.hyper_step_size = tf.Variable(tf.cast(np.array(hyperStepSize),self.dtype))
         
         #Setup the Markov Chain for the network parameters
         self.mainKernel=tfp.mcmc.HamiltonianMonteCarlo( #use HamiltonianMonteCarlo to step in the chain
@@ -266,7 +261,6 @@ class network(object):
                 step_size_update_fn=None, 
                 state_gradients_are_stopped=True)
 
-        
         #Setup the Transition Kernel for the hyper parameters
         self.hyperKernel=tfp.mcmc.HamiltonianMonteCarlo( #use HamiltonianMonteCarlo to step in the chain
                 target_log_prob_fn=self.calculateHyperProbs, #used to calculate log density
@@ -274,8 +268,14 @@ class network(object):
                 step_size=self.hyper_step_size,
                 step_size_update_fn=tfp.mcmc.make_simple_step_size_update_policy(num_adaptation_steps=int(burnin*0.8), decrement_multiplier=0.01), 
                 state_gradients_are_stopped=True)
-        
+   
+
+    @tf.function    
     def updateStates(self):
+        """ Updates the states of the layer object.
+        
+        Has no arguments, returns nothing.
+        """
         indexh=0
         index=0
         for n in range(len(self.layers)):
@@ -287,8 +287,13 @@ class network(object):
             if(numTensors>0):
                 self.layers[n].updateParameters(self.states[index:index+numHyperTensors])
                 index+=numTensors
-               
+    
+    
     def updateKernels(self):
+        """ Updates the main hamiltonian monte carlo kernel.
+        
+        Has no arguments, returns nothing.
+        """
         self.step_size, self.leapfrog = self.adapt.update(self.states)
         #Setup the Markov Chain for the network parameters
         self.mainKernel=tfp.mcmc.HamiltonianMonteCarlo( #use HamiltonianMonteCarlo to step in the chain
@@ -298,10 +303,15 @@ class network(object):
                 step_size_update_fn=None, 
                 state_gradients_are_stopped=True)
 
-    #@tf.function
+        
     def stepMCMC(self):
+        """ Steps the markov chain for each of the network parameters and the hyper parameters forward one step
+        
+        Has no arguments, returns nothing.
+        """
         num_results=1
         #Setup the Markov Chain for the network parameters
+        
         self.states, kernel_results = tfp.mcmc.sample_chain(
             num_results=num_results,
             num_burnin_steps=0, #start collecting data on first step
@@ -367,8 +377,6 @@ class network(object):
         else:
             self.make_response_likelihood = self.make_response_likelihood_classification
             
-            
-            
         #Create the folder and files for the networks
         filePath=None
         files=[]
@@ -394,7 +402,6 @@ class network(object):
             trainResult, trainSquaredError, trainPercentError, trainAccuracy=self.metrics(self.predict(train=True), scaleExp, True, mean, sd)
             result, squaredError, percentError, accuracy =self.metrics(self.predict(train=False), scaleExp, False, mean, sd)
             
-            
             iter_+=1
             
             print()
@@ -412,7 +419,6 @@ class network(object):
             
             self.updateKernels()
             
-            #self.step_size, self.leapfrog=self.adapt.update(nextStates)
             
             #Create new files to record network
             if(iter_>startSampling and (iter_-1-startSampling)%(networksPerFile*samplingStep)==0):
