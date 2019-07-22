@@ -16,6 +16,7 @@ def normalizeData(trainIn, trainOut, valIn, valOut, log=True):
         * trainOut: Numpy array containing the training output data
         * valIn: Numpy array containing the validation input data
         * valOut: Numpy array containing the validation output data
+        * log: Whether to log normalize data
         
     Returns:
         * data: List containing the normalized input data in the same order
@@ -25,9 +26,6 @@ def normalizeData(trainIn, trainOut, valIn, valOut, log=True):
     """
 
     normInfo=[] #stores the data required to un-normalize the data
-    print()
-    print(valOut.shape)
-    print(trainOut.shape)
     
     
     #Take the log of the output distributions
@@ -70,7 +68,7 @@ def normalizeData(trainIn, trainOut, valIn, valOut, log=True):
     return(normInfo,data)
 
 @tf.function
-def multivariateLogProb(sigmaIn, mu, x):
+def multivariateLogProb(sigmaIn, mu, x, dtype=tf.float32):
     """ Calculates the log probability of x given mu and sigma defining 
     a multivariate normal distribution. 
     
@@ -79,25 +77,29 @@ def multivariateLogProb(sigmaIn, mu, x):
         * the distribution
         * mu: an n-dimensional vector with the means of the distribution
         * x: m n-dimensional vectors to have their probabilities calculated
+        * dtype: data type of calculation
     Returns:
         * prob: an m-dimensional vector with the log-probabilities of x
     """
     sigma=sigmaIn
     
-    sigma=tf.maximum(sigma, np.float32(10**(-16)))
-    sigma=tf.minimum(sigma, np.float32(10**(16)))
+    sigma=tf.maximum(sigma, tf.cast(10**(-8),dtype))
+    sigma=tf.minimum(sigma, tf.cast(10**(8),dtype))
     logDet=2*tf.reduce_sum(input_tensor=tf.math.log(sigma))
-    k=tf.size(input=sigma, out_type=tf.float32)
-    print(k)
+    k=tf.size(input=sigma, out_type=dtype)
     inv=tf.divide(1,sigma)
     difSigma=tf.math.multiply(inv, tf.subtract(x,mu))
     difSigmaSquared=tf.reduce_sum(tf.math.multiply(difSigma, difSigma))
+    twoPi=tf.cast(2*math.pi, dtype)
+    
+    
     logLikelihood=-0.5*(logDet+difSigmaSquared
-            +k*tf.math.log(2*math.pi))   
+            +k*tf.math.log(twoPi))   
+    
     return(logLikelihood)
 
 @tf.function
-def cauchyLogProb(gamma, x0, x):
+def cauchyLogProb(gamma, x0, x, dtype=tf.float32):
     """ Calculates the log probability of x given mu and sigma defining 
     a multivariate normal distribution. 
     
@@ -106,15 +108,17 @@ def cauchyLogProb(gamma, x0, x):
         * the distribution
         * mu: an n-dimensional vector with the means of the distribution
         * x: m n-dimensional vectors to have their probabilities calculated
+        * dtype: data type of calculation
     Returns:
         * prob: an m-dimensional vector with the log-probabilities of x
     """
     
     a=tf.math.log(1+((x-x0)/gamma)**2)
-    b=tf.math.log(tf.cast(math.pi*gamma,tf.float32))
+    b=tf.math.log(tf.cast(math.pi*gamma,dtype))
     c=tf.ones_like(x)
     d=-tf.math.scalar_mul(b,c)
     prob=a+d
+    prob=tf.cast(prob, dtype)
     return(prob)
 
 
@@ -127,8 +131,8 @@ def loadNetworks(directoryPath):
         * numNetworks: Total number of networks 
         * numMatrices: Number of matrices in the network
         * matrices: A list containing all the extracted matrices
-    
     """
+    
     summary=[]
     with open(directoryPath+"summary.txt","r") as file:
         for line in iter(file):
@@ -235,7 +239,6 @@ def trainBasicRegression(hidden, inputDims, outputDims, width, cycles, epochs, p
     activation=[]
     for layer in model.layers:
         weightBias=layer.get_weights()
-        print(len(weightBias), weightBias)
         if(len(weightBias)==2):
             weights.append(weightBias[0].T)
             bias=weightBias[1]
@@ -301,7 +304,6 @@ def trainBasicClassification(hidden, inputDims, outputDims, width, cycles, epoch
     activation=[]
     for layer in model.layers:
         weightBias=layer.get_weights()
-        print(len(weightBias), weightBias)
         if(len(weightBias)==2):
             weights.append(weightBias[0].T)
             bias=weightBias[1]
