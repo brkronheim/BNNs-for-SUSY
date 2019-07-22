@@ -86,19 +86,18 @@ class Prelu(object):
         self.seed=seed
             
         #Starting rate value and hyperRate
-        rate=0.3
-        self.hyperRate=0.3
+        rate=tf.cast(0.3, dtype)
+        self.hyperRate=tf.cast(0.3, self.dtype)
         
         #Starting weight mean, weight SD, bias mean, and bias SD
         
-        self.hypers=np.float32([rate])
+        self.hypers=[tf.cast(rate, self.dtype)]
 
         #Starting weights and biases
         if(activation is None):
-            self.parameters = [alpha*tf.ones(shape=(inputDims))]    
+            self.parameters = [alpha*tf.ones(shape=(inputDims), dtype=self.dtype)]    
         else:
             self.parameters = [activation]
-        #print(self.parameters)
         
     @tf.function
     def exponentialLogProb(self, rate, x):
@@ -111,7 +110,8 @@ class Prelu(object):
             * logProb: log probability of x
         """
         
-        rate=tf.absolute(rate)
+        rate=tf.math.abs(rate)
+        #rate=tf.math.maximum(rate, 0)
         logProb=-rate*x+tf.math.log(rate)        
         
         return(logProb)
@@ -149,7 +149,7 @@ class Prelu(object):
         """
         
         rate=tf.maximum(hypers[0],0.01)
-        slopes=tf.maximum(slopes[0],0)
+        slopes=tf.math.abs(slopes[0])
         prob=0
 
         #Calculate probability of new hypers
@@ -192,14 +192,27 @@ class Prelu(object):
         
         """
         slopes=slopes[0]
-        
+        #print(slopes)
         slopes=tf.reshape(slopes, (len(slopes),1))
         activated=tf.multiply(slopes, inputTensor)
         result=tf.where(tf.math.less(inputTensor,0), activated, inputTensor)
         return(self.expand(result))
     
+    @tf.function
     def updateParameters(self, slopes):
-        self.parameters = [tf.maximum(0,slopes[0])]
+        """ Updates the network parameters
         
+        Arguments:
+            * slopes: new slope parameter
+        """
+        self.parameters = [slopes[0]]
+        
+        
+    @tf.function
     def updateHypers(self, hypers):
+        """ Updates the network parameters
+        
+        Arguments:
+            * slopes: new slope parameter
+        """
         self.hypers = [tf.maximum(0.01,hypers[0])]
